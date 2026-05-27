@@ -12,12 +12,13 @@
 
 **Covers:** PKG-01, PKG-02, PKG-03, PKG-04, PKG-05, PKG-06, UR-01, UR-02
 
-### Plans
+**Plans:** 4 plans
 
-1. **Hybrid package layout** — Create `CMakeLists.txt`, `package.xml`, `setup.py`, `setup.cfg` for `ament_cmake_python`; declare all dependencies; configure `rosidl_generate_interfaces`
-2. **ROS2 interface files** — Define `action/ExecuteTrajectory.action`, `srv/ManageScene.srv`, supporting `.msg` types (`TrajectoryPath.msg`, `SceneObject.msg`); verify they compile with `colcon build`
-3. **Python module skeleton** — Create `movement_controller/` package with `__init__.py`; stub `models/`, `enums/`, `utils/`, `services/` sub-packages; add BSD-3-Clause headers to all files
-4. **License & CI baseline** — Add license headers, `.gitignore`, minimal `pytest` smoke test, verify `colcon test --packages-select movement_controller` passes
+Plans:
+- [ ] 01-01-PLAN.md — Hybrid package build system (CMakeLists.txt + package.xml + setup.py + setup.cfg with SKIP_INSTALL workaround)
+- [ ] 01-02-PLAN.md — ROS2 interface files (action/ExecuteTrajectory.action, msg/TrajectoryPath.msg, 5 srv files)
+- [ ] 01-03-PLAN.md — Python module skeleton (movement_controller/ package + 4 sub-package stubs with BSD-3-Clause headers)
+- [ ] 01-04-PLAN.md — License headers, .gitignore, smoke test (test_imports.py), CI baseline verification
 
 **Success criteria:**
 - `colcon build --symlink-install` succeeds with zero errors
@@ -37,7 +38,7 @@
 
 1. **LifecycleNode base** — Implement `URMovementController(rclpy.lifecycle.LifecycleNode)` with `on_configure`, `on_activate`, `on_deactivate`, `on_cleanup` transitions; parameter declarations for all configuration values
 2. **Action server** — Wire up `ExecuteTrajectory` action server using async+callback pattern; accept goals, send per-path feedback stubs, return success result; reject concurrent goals
-3. **Data models** — Implement Pydantic v2 DTOs: `TrajectoryPathDTO`, `TrajectoryGoalDTO`, `FeedbackStatusEnum`; validate action goal fields on receipt
+3. **Data models** — Implement Pydantic v2 DTOs: `TrajectoryPathDTO`, `TrajectoryGoalDTO`, `FeedbackStatusEnum`, `MotionTypeEnum`; validate action goal fields on receipt
 4. **Unit tests** — Test lifecycle transitions, goal rejection logic, and DTO validation with mocked ROS2 interfaces
 
 **Success criteria:**
@@ -76,7 +77,7 @@
 ### Plans
 
 1. **MoveGroupSequence integration** — Replace single-path `execute()` call with `MoveGroupSequence` action for blended trajectory; configure blend radius per path segment from goal
-2. **Look-ahead thread** — Implement background planning thread: as path N executes, plan path N+1 and store in a thread-safe queue; handle cancellation cleanly
+2. **Look-ahead thread** — Implement background planning thread: as path N executes, plan remaining paths and store in a thread-safe queue; handle cancellation cleanly
 3. **Queue-driven execution loop** — Execution loop dequeues pre-planned paths and submits them immediately; falls back to inline planning if look-ahead missed
 4. **Multi-path integration test** — Test with 3-path trajectory; assert look-ahead was used (path N+1 already planned before N finishes); assert blend radius is passed through
 

@@ -9,7 +9,7 @@
     collision-aware, blended multi-path trajectories on industrial robot arms
     using MoveIt2 and the PILZ motion planner.
   </description>
-  <maintainer email="maintainer@example.com">Maintainer Name</maintainer>
+  <maintainer email="ron.freimann@ericsson.com">Ron Freimann</maintainer>
   <license>BSD-3-Clause</license>
 
   <!-- Build tool -->

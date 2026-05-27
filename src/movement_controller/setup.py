@@ -25,9 +25,37 @@
 # ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 # POSSIBILITY OF SUCH DAMAGE.
 
-from setuptools import setup
+from glob import glob
+
+from setuptools import find_packages, setup
+
+PACKAGE_NAME = 'movement_controller'
 
 setup(
-    name='movement_controller',
+    name=PACKAGE_NAME,
     version='0.1.0',
+    packages=find_packages(exclude=['tests', 'tests.*']),
+    data_files=[
+        ('share/ament_index/resource_index/packages',
+         [f'resource/{PACKAGE_NAME}']),
+        (f'share/{PACKAGE_NAME}', ['package.xml']),
+        (f'share/{PACKAGE_NAME}/action', glob('action/*.action')),
+        (f'share/{PACKAGE_NAME}/msg', glob('msg/*.msg')),
+    ],
+    install_requires=['setuptools', 'pydantic>=2.0,<3'],
+    zip_safe=False,
+    maintainer='Ron Freimann',
+    maintainer_email='ron.freimann@ericsson.com',
+    description=(
+        'ROS2 package providing a vendor-agnostic action interface for executing '
+        'collision-aware, blended multi-path trajectories on industrial robot arms '
+        'using MoveIt2 and the PILZ motion planner.'
+    ),
+    license='BSD-3-Clause',
+    tests_require=['pytest'],
+    entry_points={
+        'console_scripts': [
+            'ur_movement_controller = movement_controller.ur_movement_controller:main',
+        ],
+    },
 )

@@ -1,0 +1,10 @@
+# Runtime Python dependencies — pinned for reproducibility.
+# Installed in the Docker image before colcon build.
+# setup.py install_requires uses loose ranges (e.g. pydantic>=2.0);
+# this file is the single source of truth for what actually gets installed.
+#
+# To update a version: change the pin here, rebuild the image, run tests.
+# Add new runtime deps here when introducing them in a phase plan.
+
+# ── Config / validation ────────────────────────────────────────────────────
+pydantic==2.13.4

@@ -95,6 +95,30 @@ if(BUILD_TESTING)
     TIMEOUT 60
     WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
   )
+
+  ament_add_pytest_test(test_enums_and_dtos
+    "tests/unit/test_enums_and_dtos.py"
+    APPEND_ENV PYTHONPATH=${CMAKE_CURRENT_BINARY_DIR}/rosidl_generator_py
+    ENV PYTEST_ADDOPTS=--import-mode=importlib
+    TIMEOUT 60
+    WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
+  )
+
+  ament_add_pytest_test(test_trajectory_grouper
+    "tests/unit/test_trajectory_grouper.py"
+    APPEND_ENV PYTHONPATH=${CMAKE_CURRENT_BINARY_DIR}/rosidl_generator_py
+    ENV PYTEST_ADDOPTS=--import-mode=importlib
+    TIMEOUT 60
+    WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
+  )
+
+  ament_add_pytest_test(test_ur_movement_controller
+    "tests/unit/test_ur_movement_controller.py"
+    APPEND_ENV PYTHONPATH=${CMAKE_CURRENT_BINARY_DIR}/rosidl_generator_py
+    ENV PYTEST_ADDOPTS=--import-mode=importlib
+    TIMEOUT 60
+    WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
+  )
 endif()
 
 # --------------------------------------------------------------------------

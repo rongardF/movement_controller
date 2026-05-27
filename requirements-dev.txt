@@ -1,0 +1,16 @@
+# Development / CI tooling — pinned separately from runtime deps.
+# Installed in the Docker image (all profiles); not needed at runtime.
+#
+# Versions chosen for Python 3.12 compatibility (Ubuntu 24.04 default).
+
+-r requirements.txt      # dev environment includes all runtime deps
+
+# ── Linting / formatting ───────────────────────────────────────────────────
+flake8==7.1.0
+ruff==0.4.10
+mypy==1.10.0
+
+# ── Testing ────────────────────────────────────────────────────────────────
+pytest==8.2.2
+pytest-mock==3.14.0
+pytest-asyncio==1.3.0

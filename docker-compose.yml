@@ -1,0 +1,46 @@
+# docker-compose.yml
+# Usage:
+#   dev  (workstation):  docker compose --profile dev up
+#   prod (workstation):   docker compose --profile prod up
+#   Shell into workstation:              docker compose exec workstation bash
+
+services:
+
+  # ── Dev workstation ──────────────────────────────────────────────────────
+  # Full source mount; dev tools included; runs as root for ease of development.
+  workstation:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile
+      network: host
+    image: workstation:dev
+    network_mode: host            # Required: DDS multicast/unicast discovery
+    environment:
+      - ROS_DOMAIN_ID=${ROS_DOMAIN_ID:-42}
+      - RCUTILS_LOGGING_USE_STDOUT=0             # rclpy logs to stderr; JSON goes to stdout
+      - MONGO_URI=${MONGO_URI:-mongodb://localhost:27017}
+      - WORKSTATION_ID=${WORKSTATION_ID:-dev-workstation-01}
+      - ROS_AUTOMATIC_DISCOVERY_RANGE=LOCALHOST  # Limit DDS discovery to this machine
+    volumes:
+      - .:/workspaces/movement_controller:rw   # Live source mount (symlink-install works)
+    stdin_open: true
+    tty: true
+    profiles:
+      - dev
+
+  # ── Prod workstation ─────────────────────────────────────────────────────
+  # No source mount; runs from baked image; non-root user.
+  # Build the image first: docker build -t workstation:prod .
+  workstation-prod:
+    image: workstation:prod
+    network_mode: host
+    user: "1000:1000"             # Non-root: matches UID of 'user' in Dockerfile
+    environment:
+      - ROS_DOMAIN_ID=${ROS_DOMAIN_ID:-42}
+      - RCUTILS_LOGGING_USE_STDOUT=0
+      - WORKSTATION_ID=${WORKSTATION_ID:-}
+      - APP_PROFILE=prod   # entrypoint uses this to enforce required-var check
+      - ROS_AUTOMATIC_DISCOVERY_RANGE=LOCALHOST
+    restart: unless-stopped
+    profiles:
+      - prod

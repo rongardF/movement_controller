@@ -5,8 +5,8 @@
 ## Current Status
 
 **Phase:** 2 — LifecycleNode & Action Server Skeleton  
-**Current Phase:** Not started  
-**Next Action:** Run `/gsd-execute-phase 2` to execute Phase 2
+**Current Phase:** Context gathered — ready for planning  
+**Next Action:** Run `/gsd-plan-phase 2` to plan Phase 2
 
 ## Phase History
 
@@ -49,4 +49,4 @@
 - All planning docs committed to git (`commit_docs: true`)
 
 ---
-*Last updated: 2026-05-27 after Phase 1 completion*
+*Last updated: 2026-05-27 after Phase 2 context gathering*

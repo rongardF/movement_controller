@@ -5,15 +5,15 @@
 ## Current Status
 
 **Phase:** 2 — LifecycleNode & Action Server Skeleton  
-**Current Phase:** Context gathered — ready for planning  
-**Next Action:** Run `/gsd-plan-phase 2` to plan Phase 2
+**Current Phase:** Planned — ready to execute  
+**Next Action:** Run `/gsd-execute-phase 2` to execute Phase 2
 
 ## Phase History
 
 | Phase | Status | Completed |
 |-------|--------|----------|
 | 1 — Package Scaffold & Interface Definitions | Completed | 2026-05-27 |
-| 2 — LifecycleNode & Action Server Skeleton | Not started | — |
+| 2 — LifecycleNode & Action Server Skeleton | Planned | 2026-05-27 |
 | 3 — MoveIt2 + PILZ Single-Path Execution | Not started | — |
 | 4 — Look-Ahead Planning & Blended Multi-Path Execution | Not started | — |
 | 5 — Motion Constraints | Not started | — |
@@ -49,4 +49,4 @@
 - All planning docs committed to git (`commit_docs: true`)
 
 ---
-*Last updated: 2026-05-27 after Phase 2 context gathering*
+*Last updated: 2026-05-27 after Phase 2 planning (4 plans, 3 waves)*

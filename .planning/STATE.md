@@ -4,15 +4,15 @@
 
 ## Current Status
 
-**Phase:** Not started  
-**Current Phase:** —  
-**Next Action:** Run `/gsd-plan-phase 1` to plan Phase 1 (Package Scaffold & Interface Definitions)
+**Phase:** 1 — Package Scaffold & Interface Definitions  
+**Current Phase:** Planned  
+**Next Action:** Run `/gsd-execute-phase 1` to execute Phase 1
 
 ## Phase History
 
 | Phase | Status | Completed |
 |-------|--------|-----------|
-| 1 — Package Scaffold & Interface Definitions | Not started | — |
+| 1 — Package Scaffold & Interface Definitions | Planned | — |
 | 2 — LifecycleNode & Action Server Skeleton | Not started | — |
 | 3 — MoveIt2 + PILZ Single-Path Execution | Not started | — |
 | 4 — Look-Ahead Planning & Blended Multi-Path Execution | Not started | — |

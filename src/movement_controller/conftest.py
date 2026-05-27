@@ -24,3 +24,39 @@
 # CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
 # ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 # POSSIBILITY OF SUCH DAMAGE.
+"""
+Root conftest.py — ensure installed (generated) interfaces take priority over source.
+
+This file MUST live at the pytest rootdir (same directory as setup.cfg) so that
+pytest loads it before adding the rootdir to sys.path in prepend mode.
+
+When pytest's --import-mode=prepend adds this rootdir to sys.path[0], it causes
+`movement_controller/` (the source package, without generated action/msg/srv) to
+shadow the colcon-installed merged package. This hook removes the rootdir from
+sys.path so that the installed package is found instead.
+"""
+import os
+import sys
+
+
+def pytest_configure(config):  # noqa: ARG001
+    """Remove package source root from sys.path before test collection starts."""
+    # This file lives at the rootdir; __file__ gives us that path directly.
+    pkg_root = os.path.dirname(os.path.abspath(__file__))
+    cwd = os.getcwd()
+
+    # Remove all sys.path entries pointing to this source root so that the
+    # installed (generated) interfaces take priority over the source package.
+    sys.path[:] = [
+        p for p in sys.path
+        if p not in ('', cwd, pkg_root)
+        and not (p and os.path.realpath(p) == os.path.realpath(pkg_root))
+    ]
+
+    # Evict any movement_controller already imported from the source directory
+    stale = [
+        k for k in sys.modules
+        if k == 'movement_controller' or k.startswith('movement_controller.')
+    ]
+    for key in stale:
+        del sys.modules[key]

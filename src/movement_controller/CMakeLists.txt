@@ -86,9 +86,12 @@ if(BUILD_TESTING)
   find_package(ament_cmake_pytest REQUIRED)
 
   # NOTE: ament_cmake_pytest does NOT auto-discover tests — list each file explicitly.
+  # PYTEST_ADDOPTS passes --import-mode=importlib to prevent pytest from inserting
+  # the rootdir into sys.path[0], which would shadow the installed package.
   ament_add_pytest_test(test_imports
     "tests/unit/test_imports.py"
     APPEND_ENV PYTHONPATH=${CMAKE_CURRENT_BINARY_DIR}/rosidl_generator_py
+    ENV PYTEST_ADDOPTS=--import-mode=importlib
     TIMEOUT 60
     WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
   )

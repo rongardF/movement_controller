@@ -16,17 +16,19 @@
 
 ### ROS2 Action Interface
 
-- [ ] **ACT-01**: `ExecuteTrajectory` action defined in `action/ExecuteTrajectory.action` with goal containing a list of trajectory paths
-- [ ] **ACT-02**: Each trajectory path in the goal specifies: a UUID4 path ID (string), motion type (LIN / PTP / CIRC), list of target poses (`geometry_msgs/PoseStamped`), and blend radius (float)
-- [ ] **ACT-03**: Action feedback publishes `{status: executing|completed, trajectory_path_id: string}` after each path segment begins and completes
-- [ ] **ACT-04**: Action result returns `{success: bool, error_message: string}`
+- [ ] **ACT-01**: `ExecuteTrajectory` action defined in `action/ExecuteTrajectory.action` with goal containing a list of trajectory paths (`TrajectoryPath` from `msg/TrajectoryPath.msg`)
+- [ ] **ACT-02**: Each `TrajectoryPath` in the goal specifies: a UUID4 path ID (string), motion type (LIN / PTP / CIRC), one target poses (`geometry_msgs/PoseStamped`), blend radius (float), cartesian speed (float, m/s) of end-effector, acceleration/de-acceleration (float, m/s2) of end-effector and circular movement related values like circular movement type (string, `interim` / `center`) and circular movement point (`geometry_msgs/Point`)
+- [ ] **ACT-03**: Action feedback publishes `{status: executing|completed, trajectory_path_id: list[string]}` after each path segment begins and completes. The blended trajectory paths will be executed in one continuous motion so feedback will be sent only once when execution starts and once when execution completes. The feedback `trajectory_path_id` is a list that will contain all ID values of trajectory paths included in the blended motion.
+- [ ] **ACT-04**: Action result returns `{success: bool, error_message: string, trajectory_paths_completed: list[string]}`
 - [ ] **ACT-05**: Trajectory execution node is a `rclpy.lifecycle.LifecycleNode` with correct lifecycle transitions
+- [ ] **ACT-06**: `ExecuteTrajectory` action goal can contain one-to-many trajectory paths and they are executed in the order that they are defined
+- [ ] **ACT-07**: If `TrajectoryPath` has a non-zero/non-negative (>=0) blend radius then it must be blended together with previous `TrajectoryPath` in the goal list of trajectory paths. Exception to this is the first `TrajectoryPath` in the list – this one cannot be blended together with any previous `TrajectoryPath` so blend radius for that is ignored.
 
 ### Motion Planning & Execution
 
 - [ ] **MOT-01**: PILZ Industrial Motion Planner plugin is used for planning (`LIN`, `PTP`, `CIRC` pipeline IDs)
 - [ ] **MOT-02**: Multi-path trajectories with blending are executed via MoveIt2 `MoveGroupSequence` action
-- [ ] **MOT-03**: Look-ahead planning: path N+1 is planned concurrently on a background thread while path N is executing
+- [ ] **MOT-03**: Look-ahead planning: path >N are planned sequentially (in order) on a background thread while path N is executing
 - [ ] **MOT-04**: Planned trajectories are queued; the next path executes immediately when current path completes (no re-plan latency)
 - [ ] **MOT-05**: Action server rejects new goals while a trajectory is in execution; returns error result
 
@@ -36,6 +38,8 @@
 - [ ] **CON-02**: Node reads per-joint angle constraints from parameters and applies them to all planning requests
 - [ ] **CON-03**: Node reads end-effector orientation constraint from parameters (tolerated roll/pitch/yaw deviation) and applies it to all planning requests
 - [ ] **CON-04**: Constraints are applied persistently for the lifetime of the node; they are not overridable per action goal
+- [ ] **CON-05**: Node reads end-effector maximum cartesian speed constraint and rejects the goal if requested cartesian speed exceeds it
+- [ ] **CON-06**: Node reads end-effector maximum joint speeds constraint and applies them to all planning requests
 
 ### Scene Management
 
@@ -45,6 +49,7 @@
 - [ ] **SCN-04**: Collision objects can be attached to a robot link (e.g., grasped object on `tool0`) via the same interface
 - [ ] **SCN-05**: Attached objects can be detached and returned to the world frame
 - [ ] **SCN-06**: Collision objects can be removed by ID
+- [ ] **SCN-07**: It is possible to modify collision-allowed matrix for all the scene objects
 
 ### UR10 Integration
 
@@ -96,11 +101,11 @@
 | Requirement | Phase | Status |
 |-------------|-------|--------|
 | PKG-01 – PKG-06 | Phase 1 | Pending |
-| ACT-01 – ACT-05 | Phase 2 | Pending |
+| ACT-01 – ACT-07 | Phase 2 | Pending |
 | MOT-01 – MOT-03 | Phase 3 | Pending |
 | MOT-04 – MOT-05 | Phase 3 | Pending |
-| CON-01 – CON-04 | Phase 4 | Pending |
-| SCN-01 – SCN-06 | Phase 5 | Pending |
+| CON-01 – CON-06 | Phase 4 | Pending |
+| SCN-01 – SCN-07 | Phase 5 | Pending |
 | UR-01 – UR-02 | Phase 1 | Pending |
 | UR-03 – UR-04 | Phase 6 | Pending |
 | TST-01 – TST-02 | Phases 1–5 (alongside) | Pending |
@@ -108,8 +113,8 @@
 | TST-05 | Phase 8 | Pending |
 
 **Coverage:**
-- v1 requirements: 29 total
-- Mapped to phases: 29
+- v1 requirements: 34 total
+- Mapped to phases: 34
 - Unmapped: 0
 
 ---

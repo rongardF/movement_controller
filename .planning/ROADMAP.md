@@ -15,10 +15,10 @@
 **Plans:** 4 plans
 
 Plans:
-- [ ] 01-01-PLAN.md — Hybrid package build system (CMakeLists.txt + package.xml + setup.py + setup.cfg with SKIP_INSTALL workaround)
-- [ ] 01-02-PLAN.md — ROS2 interface files (action/ExecuteTrajectory.action, msg/TrajectoryPath.msg, 5 srv files)
-- [ ] 01-03-PLAN.md — Python module skeleton (movement_controller/ package + 4 sub-package stubs with BSD-3-Clause headers)
-- [ ] 01-04-PLAN.md — License headers, .gitignore, smoke test (test_imports.py), CI baseline verification
+- [x] 01-01-PLAN.md — Hybrid package build system (CMakeLists.txt + package.xml + setup.py + setup.cfg with SKIP_INSTALL workaround)
+- [x] 01-02-PLAN.md — ROS2 interface files (action/ExecuteTrajectory.action, msg/TrajectoryPath.msg, 5 srv files)
+- [x] 01-03-PLAN.md — Python module skeleton (movement_controller/ package + 4 sub-package stubs with BSD-3-Clause headers)
+- [x] 01-04-PLAN.md — License headers, .gitignore, smoke test (test_imports.py), CI baseline verification
 
 **Success criteria:**
 - `colcon build --symlink-install` succeeds with zero errors

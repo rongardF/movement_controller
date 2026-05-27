@@ -19,9 +19,9 @@ A single reliable ROS2 action that executes collision-aware, blended multi-path 
 - [ ] ROS2 package scaffold with correct `ament_cmake_python` structure, CMakeLists.txt, package.xml, and Python module layout
 - [ ] ROS2 action interface (`ExecuteTrajectory`) with trajectory path list goal, per-path feedback (status + UUID4 path ID), and success/error result
 - [ ] Execute multi-path trajectory using PILZ planner (LIN / PTP / CIRC motion types) via `MoveGroupSequence` with blend radius support
-- [ ] Look-ahead planning: plan the next trajectory path in the background while the current one executes, minimising inter-path latency
+- [ ] Look-ahead planning: plan the next trajectory paths in the background while the current one executes, minimising inter-path latency
 - [ ] Scene management interface — add/remove collision objects (primitives and mesh files), both free-standing and attached/detached to robot links
-- [ ] Persistent motion constraints configured via node parameters: per-joint constraints, end-effector orientation constraints, workspace bounding-box constraint
+- [ ] Persistent motion constraints configured via node parameters: per-joint constraints, end-effector orientation constraints, workspace bounding-box constraint, maximum cartesian speed, maximum joint speed
 - [ ] UR10 integration via `ur_robot_driver` and `ur_moveit_config` packages; launch files for both simulation and real hardware modes
 - [ ] End-to-end validated in Gazebo Harmonic simulation with UR10 URDF/SRDF
 - [ ] End-to-end validated on real UR10 hardware
@@ -39,7 +39,7 @@ A single reliable ROS2 action that executes collision-aware, blended multi-path 
 
 - **Runtime:** ROS2 Jazzy on Ubuntu 24.04, developed inside a Docker devcontainer (`ros:jazzy-ros-base`)
 - **Motion planning:** MoveIt2 with PILZ Industrial Motion Planner plugin for deterministic LIN/PTP/CIRC motion profiles; `MoveGroupSequence` action for blended execution
-- **Look-ahead planning:** While path N executes, path N+1 is planned concurrently; planned trajectory is queued and executed immediately on path completion to minimise stop-start latency
+- **Look-ahead planning:** While path N executes, remaining paths are planned in order of execution, queued and executed immediately on path completion to minimise stop-start latency
 - **Driver:** `ur_robot_driver` (Universal Robotics official ROS2 driver); simulation via `fake_hardware_interface`
 - **Data models:** Pydantic v2 for all internal DTOs; ROS2 `.action` / `.msg` / `.srv` files for interface definitions
 - **Language:** Python 3.11+ primary; C/C++ only for `rosidl` interface generation

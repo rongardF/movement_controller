@@ -24,3 +24,5 @@
 # CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
 # ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 # POSSIBILITY OF SUCH DAMAGE.
+
+#FIXME: HUMAN REVIEW COMMENT: I think w should export model classes here so that users can import from movement_controller.models instead of needing to know the submodules. It should also help to avoid import issues as we can ensure the import order is correct and that all models are available when needed. What do you think?

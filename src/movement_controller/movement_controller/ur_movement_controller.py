@@ -26,9 +26,9 @@
 # POSSIBILITY OF SUCH DAMAGE.
 """URMovementController — ROS2 LifecycleNode for trajectory execution."""
 
-import threading
+import threading #FIXME: HUMAN REVIEW COMMENT: better to use `from threading import Lock` and then use `Lock()` instead of `threading.Lock()`, to keep the code cleaner and more concise
 
-import rclpy
+import rclpy #FIXME: HUMAN REVIEW COMMENT: better to use `from rclpy import init, spin, shutdown` and then call `init()`, `spin(node)`, and `shutdown()` instead of `rclpy.init()`, etc., to keep the code cleaner and more concise
 from lifecycle_msgs.msg import State
 from rcl_interfaces.msg import ParameterDescriptor
 from rclpy.action import ActionServer, GoalResponse
@@ -44,14 +44,17 @@ from movement_controller.utils.trajectory_grouper import TrajectoryGrouper
 
 
 class URMovementController(LifecycleNode):
-    """LifecycleNode that exposes an ExecuteTrajectory action server."""
+    """LifecycleNode that exposes an ExecuteTrajectory action server."""  #FIXME: HUMAN REVIEW COMMENT: this should be more generic since the not about exposign this action. You can at least leave a comment here that it should be ammended in the future once more functionality is added.
 
     def __init__(self, node_name: str = 'ur_movement_controller') -> None:
         super().__init__(node_name)
         self._action_server: ActionServer | None = None
         self._is_executing: bool = False
-        self._executing_lock = threading.Lock()
+        self._executing_lock = threading.Lock() #FIXME: HUMAN REVIEW COMMENT: should have type annotation for this lock, e.g. `self._executing_lock: Lock = Lock()`, to make it clear what type of lock it is and to help with static analysis and readability
 
+    #FIXME: HUMAN REVIEW COMMENT: instead of having code sections defined as headers as below use the `region: <block-description>` and `endregion` comments that some IDEs support, which would allow for better code folding and navigation. For example:
+    # `# region: lifecycle callbacks` and `# endregion: lifecycle callbacks` instead of the dashed headers. Also, add info about this preference to instructions so you know to follow it when writing code.
+    
     # ------------------------------------------------------------------
     # Lifecycle callbacks
     # ------------------------------------------------------------------
@@ -59,6 +62,7 @@ class URMovementController(LifecycleNode):
     def on_configure(self, state: LifecycleState) -> TransitionCallbackReturn:
         self.get_logger().info(f'Configuring from state: {state.label}')
 
+        #FIXME: HUMAN REVIEW COMMENT: I know we decided that action server name will be given as a parameter, but now I think it should be hardcoded value as `movement_controller/execute_trajectory`, since this is a specific controller for UR and we don't expect to have multiple instances running at the same time. It would also simplify the code and avoid potential issues with parameter configuration. What do you think?
         self.declare_parameter(
             'action_server_name',
             'movement_controller/execute_trajectory',
@@ -104,7 +108,7 @@ class URMovementController(LifecycleNode):
 
     def _goal_callback(self, goal: ExecuteTrajectory.Goal) -> GoalResponse:
         # 1. Lifecycle state check — must be ACTIVE
-        if self._state_machine.current_state[0] != State.PRIMARY_STATE_ACTIVE:
+        if self._state_machine.current_state[0] != State.PRIMARY_STATE_ACTIVE: #FIXME: HUMAN REVIEW COMMENT: I think callbacks will not execute before it is in 'actvie' state so perhaps this is redundant guard? Please research and double chekc this, here is reference https://design.ros2.org/articles/node_lifecycle.html
             self.get_logger().error(
                 f'Goal rejected: node is not active '
                 f'(current state: {self._state_machine.current_state[1]})'
@@ -118,7 +122,7 @@ class URMovementController(LifecycleNode):
                 return GoalResponse.REJECT
 
         # 3. Non-empty paths list
-        if not goal.paths:
+        if not goal.paths:  #FIXME: HUMAN REVIEW COMMENT:  I think we could perhaps move this code into `TrajectoryGoalDTO` validation, so that we ensure any instance of `TrajectoryGoalDTO` is always valid and we can keep this kind of logic out of the controller. Here we could simply have a try-except block when creating the DTO and catch any validation errors. What do you think?
             self.get_logger().error('Goal rejected: paths list is empty')
             return GoalResponse.REJECT
 

@@ -24,3 +24,5 @@
 # CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
 # ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 # POSSIBILITY OF SUCH DAMAGE.
+
+# FIXME: HUMAN REVIEW COMMENT: I think we should export TrajectoryGrouper and any other utility classes or functions here, so that users can import them directly from movement_controller.utils instead of needing to know the submodules. It should also help to avoid import issues as we can ensure the import order is correct and that all utilities are available when needed. What do you think?

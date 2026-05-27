@@ -35,7 +35,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from movement_controller.enums.motion_type_enum import MotionTypeEnum
 
-if TYPE_CHECKING:
+if TYPE_CHECKING: #FIXME: HUMAN REVIEW COMMENT: what is this for? What does it do?
     pass
 
 
@@ -44,7 +44,7 @@ class TrajectoryPathDTO(BaseModel):
 
     model_config = ConfigDict(arbitrary_types_allowed=True, frozen=True)
 
-    path_id: str = Field(description='UUID4 path identifier, must be non-empty')
+    path_id: str = Field(description='UUID4 path identifier, must be non-empty')  #FIXME: HUMAN REVIEW COMMENT: I think this should be UUID4 type imported from uuid module, rather than a string. It would ensure that the path_id is always a valid UUID4 and would make it clearer to users that this is the expected format
     motion_type: MotionTypeEnum = Field(description='Motion type: LIN, PTP, or CIRC')
     target_pose: PoseStamped = Field(description='Target end-effector pose with frame_id')
     blend_radius: float = Field(
@@ -63,7 +63,7 @@ class TrajectoryPathDTO(BaseModel):
         default='',
         description='Tool frame override; empty string means use tool0',
     )
-    circ_type: str = Field(
+    circ_type: str = Field( #FIXME: HUMAN REVIEW COMMENT: I think we could use Enum for this as well, since it has a limited set of valid values (e.g. 'interim' or 'center'). It would provide stronger validation and make it clearer to users what the expected values are. What do you think?
         default='',
         description='CIRC arc point interpretation: interim or center',
     )
@@ -74,21 +74,21 @@ class TrajectoryPathDTO(BaseModel):
     @field_validator('path_id')
     @classmethod
     def validate_path_id(cls, v: str) -> str:
-        if not v:
+        if not v: #FIXME: HUMAN REVIEW COMMENT: should we also validate that it's a valid UUID4 format? We could use the uuid module to attempt to parse it and ensure it's a valid UUID4, which would provide stronger validation than just checking for non-empty string. What do you think?
             raise ValueError('path_id must be non-empty')
         return v
 
     @field_validator('blend_radius', mode='before')
     @classmethod
     def normalise_blend_radius(cls, v: float) -> float:
-        return 0.0 if float(v) < 0 else float(v)
+        return 0.0 if float(v) < 0 else float(v) #FIXME: HUMAN REVIEW COMMENT: we should account for failure where the value is not parsable to a float, to avoid unexpected exceptions. We could catch the exception and raise a ValueError with a clear message indicating that blend_radius must be a number. What do you think?
 
     @classmethod
     def from_ros_msg(cls, ros_msg) -> 'TrajectoryPathDTO':
         """Construct a TrajectoryPathDTO from a TrajectoryPath ROS2 message."""
         return cls(
-            path_id=ros_msg.path_id,
-            motion_type=ros_msg.motion_type,
+            path_id=ros_msg.path_id, 
+            motion_type=ros_msg.motion_type, #FIXME: HUMAN REVIEW COMMENT: should we not cast it to enum here?
             target_pose=ros_msg.target_pose,
             blend_radius=ros_msg.blend_radius,
             cartesian_speed=ros_msg.cartesian_speed,

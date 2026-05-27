@@ -24,3 +24,5 @@
 # CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
 # ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 # POSSIBILITY OF SUCH DAMAGE.
+
+# FIXME: HUMAN REVIEW COMMENT: I think we should export UrMovementController class here so it can be imported directly from movement_controller, making it more convenient for users. What do you think?

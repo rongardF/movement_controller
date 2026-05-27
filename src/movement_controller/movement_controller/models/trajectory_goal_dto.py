@@ -40,9 +40,11 @@ class TrajectoryGoalDTO(BaseModel):
         description='Non-empty list of trajectory paths to execute'
     )
 
-    @field_validator('paths')
+    @field_validator('paths')  #FIXME: HUMAN REVIEW COMMENT: is it validating before or after? Perhaps we shoudl be explicit about this? This applies here and in other places where we use field validators, it would be good to be consistent and clear about when the validation is happening
     @classmethod
     def validate_paths_non_empty(cls, v: list) -> list:
-        if not v:
+        if not v:    #FIXME: HUMAN REVIEW COMMENT: I think we should also validate for duplicate path_ids here, to ensure that all paths in the list have unique identifiers. This would help to prevent potential issues during trajectory execution where duplicate path_ids could cause confusion or errors. We could use a set to track seen path_ids and raise a ValueError if we encounter a duplicate. What do you think?
             raise ValueError('paths list must be non-empty')
         return v
+    
+     #FIXME: HUMAN REVIEW COMMENT: I think it would simplify code if we had a static method 'from_ros_msg' that takes the ROS message and constructs the DTO, instead of having this logic in the controller. It would also help to keep the controller code cleaner and more focused on its main responsibilities. It would internally convert all 'TrajectoryPath' messages to 'TrajectoryPathDTO' instances, so the controller can work with the DTOs directly. What do you think?

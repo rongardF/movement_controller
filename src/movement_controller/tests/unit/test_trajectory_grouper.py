@@ -45,12 +45,12 @@ def _p(path_id: str, blend_radius: float) -> TrajectoryPathDTO:
     )
 
 
-def test_empty_paths_raises():
+def test_empty_paths_raises(): # FIXME: HUMAN REVIEW COMMENT: missing docstring on some of the test cases here
     with pytest.raises(ValueError, match='must not be empty'):
         TrajectoryGrouper.group([])
 
 
-def test_duplicate_path_id_raises():
+def test_duplicate_path_id_raises(): # FIXME: HUMAN REVIEW COMMENT: this should be validate in DTO
     with pytest.raises(ValueError, match='Duplicate'):
         TrajectoryGrouper.group([_p('a', 0.0), _p('a', 0.0)])
 

@@ -56,7 +56,7 @@ def node(ros_context):
 
 def _make_ros_goal(path_id='uuid-1', motion_type='LIN'):
     """Build a mock ExecuteTrajectory.Goal with a single path."""
-    mock_path = MagicMock()
+    mock_path = MagicMock() # FIXME: HUMAN REVIEW COMMENT: perhaps it would be better to use 'autospec=ExecuteTrajectory.Goal' here to ensure the mock has the same attributes as the real message type?
     mock_path.path_id = path_id
     mock_path.motion_type = motion_type
     goal = MagicMock()
@@ -103,7 +103,7 @@ def test_goal_rejected_empty_path_id(node):
         mock_sm.current_state = (State.PRIMARY_STATE_ACTIVE, 'active')
         result = node._goal_callback(_make_ros_goal(path_id=''))
     assert result == GoalResponse.REJECT
-
+# FIXME: HUMAN REVIEW COMMENT: we should have two additional test cases: a) test goal rejected if 'path_id' not valid UUId4 value b) goal rejected if duplicate 'path_id' values in the paths list.
 
 def test_goal_rejected_invalid_motion_type(node):
     with patch.object(node, '_state_machine') as mock_sm:
@@ -122,7 +122,7 @@ def test_goal_accepted_when_active_valid(node):
 
 def _make_path_msg(path_id: str, blend_radius: float = 0.0) -> MagicMock:
     """Build a mock TrajectoryPath message."""
-    m = MagicMock()
+    m = MagicMock() # FIXME: HUMAN REVIEW COMMENT: maybe better to use 'autospec=TrajectoryPath' here to ensure the mock has the same attributes as the real message type?
     m.path_id = path_id
     m.motion_type = 'LIN'
     m.blend_radius = blend_radius
@@ -137,7 +137,7 @@ def _make_path_msg(path_id: str, blend_radius: float = 0.0) -> MagicMock:
 
 def test_execute_callback_stub_feedback_sequence(node):
     """Two paths (br=0.0 each) → 2 groups → 4 feedback messages."""
-    mock_goal_handle = MagicMock()
+    mock_goal_handle = MagicMock() # FIXME: HUMAN REVIEW COMMENT: maybe we should use 'autospec=ServerGoalHandle' here to ensure the mock has the same attributes as the real ServerGoalHandle type?
     mock_goal_handle.request.paths = [
         _make_path_msg('p1', 0.0),
         _make_path_msg('p2', 0.0),

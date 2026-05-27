@@ -54,7 +54,7 @@ class TrajectoryGrouper:
             raise ValueError('paths list must not be empty')
 
         # Pre-validation: reject duplicate path_id values
-        seen_ids: set[str] = set()
+        seen_ids: set[str] = set()  #FIXME: HUMAN REVIEW COMMENT: I think this type of validation should be done before we accept the goal in the controller, perhaps in the DTO validation, to ensure that any instance of `TrajectoryGoalDTO` is always valid and we can keep this kind of logic out of the controller
         for path in paths:
             if path.path_id in seen_ids:
                 raise ValueError(f'Duplicate path_id: {path.path_id!r}')

@@ -24,3 +24,5 @@
 # CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
 # ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 # POSSIBILITY OF SUCH DAMAGE.
+
+#FIXME: HUMAN REVIEW COMMENT: I think we should import the enums here and re-export them, so that users can import from movement_controller.enums instead of needing to know the submodules. It should also help to avoid import issues as we can ensure the import order is correct and that all enums are available when needed. WHat do you think?

@@ -39,7 +39,7 @@ from movement_controller.models.trajectory_path_dto import TrajectoryPathDTO
 def _make_path(**overrides) -> TrajectoryPathDTO:
     """Build a minimal valid TrajectoryPathDTO with sensible defaults."""
     defaults = {
-        'path_id': 'p1',
+        'path_id': 'p1', # FIXME: HUMAN REVIEW COMMENT:  this shoudl be UUID4 value
         'motion_type': MotionTypeEnum.LIN,
         'target_pose': PoseStamped(),
         'circ_point': Point(),
@@ -72,7 +72,7 @@ def test_trajectory_path_dto_invalid_motion_type():
         _make_path(motion_type='INVALID')
 
 
-def test_trajectory_path_dto_empty_path_id():
+def test_trajectory_path_dto_empty_path_id(): # FIXME: HUMAN REVIEW COMMENT: we shoudl also validate non-duplicate path_ids in a separate test case
     with pytest.raises(ValidationError):
         _make_path(path_id='')
 

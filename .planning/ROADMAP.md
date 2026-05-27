@@ -34,12 +34,13 @@ Plans:
 
 **Covers:** ACT-01, ACT-02, ACT-03, ACT-04, ACT-05
 
-### Plans
+**Plans:** 4 plans
 
-1. **LifecycleNode base** — Implement `URMovementController(rclpy.lifecycle.LifecycleNode)` with `on_configure`, `on_activate`, `on_deactivate`, `on_cleanup` transitions; parameter declarations for all configuration values
-2. **Action server** — Wire up `ExecuteTrajectory` action server using async+callback pattern; accept goals, send per-path feedback stubs, return success result; reject concurrent goals
-3. **Data models** — Implement Pydantic v2 DTOs: `TrajectoryPathDTO`, `TrajectoryGoalDTO`, `FeedbackStatusEnum`, `MotionTypeEnum`; validate action goal fields on receipt
-4. **Unit tests** — Test lifecycle transitions, goal rejection logic, and DTO validation with mocked ROS2 interfaces
+Plans:
+- [ ] 02-01-PLAN.md — LifecycleNode base (`URMovementController(LifecycleNode)` with lifecycle callbacks + parameter declarations)
+- [ ] 02-03-PLAN.md — Data models (enums, `TrajectoryPathDTO`, `TrajectoryGoalDTO`, `TrajectoryGrouper`)
+- [ ] 02-02-PLAN.md — Action server (ActionServer wired in `on_configure`, `_goal_callback`, `_execute_callback`, `setup.py` entry point)
+- [ ] 02-04-PLAN.md — Unit tests (enums/DTOs, grouper algorithm, controller callbacks) + CMakeLists.txt test registration
 
 **Success criteria:**
 - Node starts, activates, and accepts a trajectory goal without crashing

@@ -17,9 +17,9 @@ files_reviewed_list:
   - src/movement_controller/CMakeLists.txt
 findings:
   critical: 1
-  warning: 6
-  info: 6
-  total: 13
+  warning: 9
+  info: 12
+  total: 22
 reviewed_at: 2026-05-27
 ---
 
@@ -27,7 +27,7 @@ reviewed_at: 2026-05-27
 
 ## Summary
 
-The phase delivers a well-structured skeleton: Pydantic v2 models are correctly configured, the `TrajectoryGrouper` algorithm is clean and correctly tested, and the error-handling boundary pattern (exceptions caught, converted to result objects, logged) is followed throughout. One critical concurrency defect exists in the `_is_executing` guard that will allow two goals to execute simultaneously once a `MultiThreadedExecutor` is added — which is required by project conventions for action servers using `ReentrantCallbackGroup`. Six warnings cover deactivation safety, validation coupling, and missing test coverage.
+The phase delivers a well-structured skeleton: Pydantic v2 models are correctly configured, the `TrajectoryGrouper` algorithm is clean and correctly tested, and the error-handling boundary pattern (exceptions caught, converted to result objects, logged) is followed throughout. One critical concurrency defect exists in the `_is_executing` guard that will allow two goals to execute simultaneously once a `MultiThreadedExecutor` is added — which is required by project conventions for action servers using `ReentrantCallbackGroup`. Nine warnings cover deactivation safety, validation coupling, data model integrity gaps (`path_id` UUID4, `circ_type` enum), and split validation logic spread across three locations. Twelve info-level findings address type annotation gaps, API style, test mock quality, and missing `__init__.py` re-exports — many surfaced by FIXME annotations left in the source.
 
 ---
 
@@ -226,6 +226,100 @@ def test_execute_callback_clears_is_executing_after_failure(node):
 
 ---
 
+### WR-007 — `path_id` Accepts Any Non-Empty String — UUID4 Format Not Enforced [WARNING]
+
+**File:** `src/movement_controller/movement_controller/models/trajectory_path_dto.py` (lines 47, 77)
+**Category:** Quality / Data Integrity
+
+**Description:**
+The FIXME comment on line 47 flags that `path_id` should be a UUID4 type. The `validate_path_id` validator (line 77) only checks for a non-empty string — it does not validate UUID4 format. `path_id='foo'` passes silently while downstream systems expecting UUID4 semantics receive invalid values. The test fixture in `test_enums_and_dtos.py` uses `'p1'` as `path_id`, confirming the gap is undetected by current tests.
+
+**Recommendation:**
+```python
+import re
+
+_UUID4_RE = re.compile(
+    r'^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+    re.IGNORECASE,
+)
+
+@field_validator('path_id', mode='before')
+@classmethod
+def validate_path_id(cls, v: object) -> str:
+    s = str(v) if not isinstance(v, str) else v
+    if not s:
+        raise ValueError('path_id must not be empty')
+    if not _UUID4_RE.match(s):
+        raise ValueError(f'path_id must be a valid UUID4, got {s!r}')
+    return s
+```
+Also update all test fixtures using `'p1'`, `'a'`, `'b'`, etc. to valid UUID4 strings such as `'550e8400-e29b-41d4-a716-446655440000'`.
+
+---
+
+### WR-008 — `circ_type` Accepts Any String — Should Use `CircTypeEnum` [WARNING]
+
+**File:** `src/movement_controller/movement_controller/models/trajectory_path_dto.py` (line 66)
+**Category:** Quality / Validation
+
+**Description:**
+The FIXME comment on line 66 correctly identifies that `circ_type: str` should be an enum. Valid values are `'interim'` and `'center'` per robot motion programming standards. An invalid value like `circ_type='middle'` passes validation silently and would cause undefined behaviour in Phase 3 when the value is used to configure MoveIt2 CIRC planning.
+
+**Recommendation:**
+Create `src/movement_controller/movement_controller/enums/circ_type_enum.py`:
+```python
+from enum import Enum
+
+class CircTypeEnum(str, Enum):
+    INTERIM = 'interim'
+    CENTER = 'center'
+```
+Then update `TrajectoryPathDTO`:
+```python
+from movement_controller.enums.circ_type_enum import CircTypeEnum
+
+circ_type: CircTypeEnum = Field(
+    default=CircTypeEnum.INTERIM,
+    description='CIRC arc reference type: interim (waypoint on arc) or center (arc center point)',
+)
+```
+Export `CircTypeEnum` from `enums/__init__.py` alongside the other enums.
+
+---
+
+### WR-009 — Validation Logic Split Across Three Locations — Consolidate Into `TrajectoryGoalDTO` [WARNING]
+
+**File:** `src/movement_controller/movement_controller/models/trajectory_goal_dto.py` (lines 43–50), `src/movement_controller/movement_controller/ur_movement_controller.py` (lines 125–134), `src/movement_controller/movement_controller/utils/trajectory_grouper.py` (line 57)
+**Category:** Quality / Design Inconsistency
+
+**Description:**
+Multiple FIXME comments identify this split: the empty-list check lives in `_goal_callback` (line 125), the motion-type whitelist is also in `_goal_callback` (line 130, already flagged as WR-002), the duplicate `path_id` check lives in `TrajectoryGrouper.group()` (line 57), and `TrajectoryGoalDTO` (line 46) duplicates the empty-list check but is never called. This creates three independent validation code paths that can drift independently.
+
+**Recommendation:**
+1. Add `from_ros_msg` factory and duplicate-`path_id` validator to `TrajectoryGoalDTO`:
+```python
+@field_validator('paths', mode='after')
+@classmethod
+def validate_paths(cls, v: list[TrajectoryPathDTO]) -> list[TrajectoryPathDTO]:
+    if not v:
+        raise ValueError('paths must not be empty')
+    seen: set[str] = set()
+    for path in v:
+        if path.path_id in seen:
+            raise ValueError(f'duplicate path_id: {path.path_id!r}')
+        seen.add(path.path_id)
+    return v
+
+@classmethod
+def from_ros_msg(cls, goal_msg: 'ExecuteTrajectory.Goal') -> 'TrajectoryGoalDTO':
+    from movement_controller.action import ExecuteTrajectory  # noqa: F401 (type hint)
+    return cls(paths=[TrajectoryPathDTO.from_ros_msg(p) for p in goal_msg.paths])
+```
+2. Replace the manual checks in `_goal_callback` with a single `TrajectoryGoalDTO.from_ros_msg(goal)` call wrapped in `try/except ValidationError`.
+3. Remove the duplicate-`path_id` check from `TrajectoryGrouper.group()` — guaranteed by DTO once the above is in place.
+
+---
+
 ### IN-001 — `TYPE_CHECKING: pass` Is Dead Code [INFO]
 
 **File:** `src/movement_controller/movement_controller/models/trajectory_path_dto.py` (lines 37–39)
@@ -262,7 +356,31 @@ Numerous `#FIXME: HUMAN REVIEW COMMENT:` annotations exist throughout all source
 if self._state_machine.current_state[0] != State.PRIMARY_STATE_ACTIVE:
     f'(current state: {self._state_machine.current_state[1]})'
 ```
-`_state_machine` is a private attribute of `rclpy.lifecycle.LifecycleNode`. Accessing it directly, and relying on the undocumented `(int, str)` tuple structure of `current_state`, is fragile — it could change between ROS2 patch versions. As the FIXME comment notes, this guard may also be redundant because the lifecycle state machine should prevent action server callbacks from firing before the node is ACTIVE. The correct approach is to verify the lifecycle design document behavior and either remove the guard or replace it with a public API if one exists.
+`_state_machine` is a private attribute of `rclpy.lifecycle.LifecycleNode`. Accessing it directly, and relying on the undocumented `(int, str)` tuple structure of `current_state`, is fragile — it could change between ROS2 patch versions.
+
+Importantly, after reviewing the [ROS2 lifecycle design doc](https://design.ros2.org/articles/node_lifecycle.html): **the guard is NOT redundant**. The lifecycle state machine does not gate action server callbacks — the `ActionServer` is created in `on_configure` (INACTIVE state) and will accept goals even after deactivation unless the `_goal_callback` explicitly rejects them. The guard must stay, but must be rewritten to avoid accessing private internals.
+
+**Recommendation:**
+Replace `_state_machine` access with a tracked `_is_active: bool` flag:
+```python
+# In __init__:
+self._is_active: bool = False
+
+# In on_activate:
+def on_activate(self, state: LifecycleState) -> TransitionCallbackReturn:
+    self._is_active = True
+    ...
+
+# In on_deactivate:
+def on_deactivate(self, state: LifecycleState) -> TransitionCallbackReturn:
+    self._is_active = False
+    ...
+
+# In _goal_callback — replace _state_machine check with:
+if not self._is_active:
+    self.get_logger().error('Goal rejected: node is not active')
+    return GoalResponse.REJECT
+```
 
 ---
 
@@ -310,6 +428,126 @@ def test_all_positive_blend_radius_except_first():
     groups = TrajectoryGrouper.group([_p('a', 0.5), _p('b', 0.3), _p('c', 0.3)])
 ```
 Path `a` has `blend_radius=0.5` (positive), not zero or negative. The name implies `a` is the exception to "all positive", but actually the algorithm has a special rule for the *first path* regardless of its blend radius. A clearer name would be `test_first_path_always_starts_new_group_even_with_positive_blend_radius`.
+
+---
+
+### IN-007 — `_executing_lock` Missing Type Annotation [INFO]
+
+**File:** `src/movement_controller/movement_controller/ur_movement_controller.py` (line 53)
+**Category:** Quality / Type Safety
+
+**Description:**
+The FIXME comment on line 53 identifies that the lock field lacks a type annotation:
+```python
+self._executing_lock = threading.Lock()
+```
+This makes the field invisible to MyPy and reduces IDE readability.
+
+**Recommendation:**
+```python
+from threading import Lock
+
+self._executing_lock: Lock = Lock()
+```
+Also update `import threading` at line 29 to `from threading import Lock` and replace all `threading.Lock()` usages with `Lock()`.
+
+---
+
+### IN-008 — Action Server Name Parameter Has No Default Value [INFO]
+
+**File:** `src/movement_controller/movement_controller/ur_movement_controller.py` (line 65)
+**Category:** Quality / Usability
+
+**Description:**
+The FIXME comment on line 65 asks whether the action server name should be hardcoded. The parameter approach is correct (allows namespace remapping and multi-instance deployment), but the parameter currently has no default, requiring explicit configuration for every deployment. The ROS2 convention is to provide a sensible default.
+
+**Recommendation:**
+```python
+self.declare_parameter(
+    'action_server_name',
+    'movement_controller/execute_trajectory',
+    ParameterDescriptor(description='Action server name for ExecuteTrajectory interface'),
+)
+```
+
+---
+
+### IN-009 — `__init__.py` Files Do Not Re-Export Public Symbols [INFO]
+
+**Files:** `src/movement_controller/movement_controller/__init__.py`, `src/movement_controller/movement_controller/models/__init__.py`, `src/movement_controller/movement_controller/enums/__init__.py`, `src/movement_controller/movement_controller/utils/__init__.py`
+**Category:** Quality / Import Ergonomics
+
+**Description:**
+FIXME comments on all four `__init__.py` files request re-exports. Without them, callers must know the full submodule path and import order problems are harder to diagnose. Standard Python package practice is to re-export public symbols from `__init__.py`.
+
+**Recommendation:**
+```python
+# models/__init__.py
+from movement_controller.models.trajectory_path_dto import TrajectoryPathDTO
+from movement_controller.models.trajectory_goal_dto import TrajectoryGoalDTO
+
+# enums/__init__.py
+from movement_controller.enums.motion_type_enum import MotionTypeEnum
+from movement_controller.enums.feedback_status_enum import FeedbackStatusEnum
+# from movement_controller.enums.circ_type_enum import CircTypeEnum  # add once WR-008 is resolved
+
+# utils/__init__.py
+from movement_controller.utils.trajectory_grouper import TrajectoryGrouper
+
+# movement_controller/__init__.py
+from movement_controller.ur_movement_controller import URMovementController
+```
+
+---
+
+### IN-010 — Test Mocks Use Plain `MagicMock()` Instead of `spec=` [INFO]
+
+**File:** `src/movement_controller/tests/unit/test_ur_movement_controller.py` (lines 59, 125, 140)
+**Category:** Quality / Test Safety
+
+**Description:**
+Three FIXME comments flag that plain `MagicMock()` is used where `spec=` would catch regressions. Plain `MagicMock()` silently accepts attribute access for any name — if the production code's attribute name changes, the test passes with the wrong attribute.
+
+**Recommendation:**
+```python
+from movement_controller.msg import TrajectoryPath
+from rclpy.action.server import ServerGoalHandle
+
+mock_path = MagicMock(spec=TrajectoryPath)        # line 59 / 125
+mock_goal_handle = MagicMock(spec=ServerGoalHandle)  # line 140
+```
+
+---
+
+### IN-011 — `@field_validator` in `TrajectoryGoalDTO` Uses Implicit Default `mode` [INFO]
+
+**File:** `src/movement_controller/movement_controller/models/trajectory_goal_dto.py` (line 43)
+**Category:** Quality / Consistency
+
+**Description:**
+The FIXME comment on line 43 requests explicit `mode=` on validators. The validator uses the Pydantic v2 default (`'after'`) implicitly. The project's other validators in `trajectory_path_dto.py` all use explicit `mode='before'`. Being explicit prevents confusion about when the validator fires.
+
+**Recommendation:**
+```python
+@field_validator('paths', mode='after')
+@classmethod
+def validate_paths_not_empty(cls, v: list) -> list:
+```
+
+---
+
+### IN-012 — `from_ros_msg` Should Explicitly Cast `motion_type` to `MotionTypeEnum` [INFO]
+
+**File:** `src/movement_controller/movement_controller/models/trajectory_path_dto.py` (line 91)
+**Category:** Quality / Explicitness
+
+**Description:**
+The FIXME comment on line 91 asks whether `motion_type` should be explicitly cast. Currently `ros_msg.motion_type` (a raw `str`) is passed directly and Pydantic silently coerces it via `(str, Enum)` inheritance. Making the cast explicit improves readability and produces a cleaner error on invalid input.
+
+**Recommendation:**
+```python
+motion_type=MotionTypeEnum(ros_msg.motion_type),
+```
 
 ---
 
@@ -371,7 +609,12 @@ See CR-001 for the full race analysis. Functionally with a single-threaded execu
 | `on_configure` / `on_cleanup` lifecycle transitions | ✗ No | Minor gap |
 | `TrajectoryGrouper` — all algorithm branches | ✓ Yes (comprehensive) | — |
 | `TrajectoryPathDTO` — all field validators | ✓ Yes | — |
-| `TrajectoryGoalDTO` | ✓ Yes (partial — never used in production) | IN-005 |
+| `TrajectoryPathDTO` — UUID4 format validation on `path_id` | ✗ No | WR-007 |
+| `TrajectoryPathDTO` — invalid `circ_type` string rejected | ✗ No | WR-008 |
+| `TrajectoryGoalDTO` — duplicate `path_id` validation | ✗ No | WR-009 |
+| `TrajectoryGoalDTO` — used as canonical validation in controller | ✗ No | WR-009 / IN-005 |
+| `_goal_callback` — invalid UUID4 `path_id` rejected | ✗ No | WR-007 |
+| `_goal_callback` — duplicate `path_id` rejected | ✗ No | WR-009 |
 
 ---
 

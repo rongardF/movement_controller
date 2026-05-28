@@ -69,7 +69,7 @@ The `moveit_py` Python bindings expose `MoveItPy`, `PlanningComponent`, and `Pla
 
 `ros-jazzy-moveit` is **not installed** in the current devcontainer. Plan 1 must add it to the Dockerfile before any other work can proceed.
 
-**Primary recommendation:** Install `ros-jazzy-moveit` (adds `moveit_py`), use `PlanRequestParameters` with direct attribute assignment for PILZ pipeline selection, use `set_path_constraints` for CIRC, mock `MoveItPy` at the module level for tests.
+**Primary recommendation:** Install `ros-jazzy-moveit` via `rosdep` (declared in `package.xml` as `<exec_depend>moveit_py</exec_depend>`; installed at devcontainer start by `startup.sh`), use `PlanRequestParameters` with direct attribute assignment for PILZ pipeline selection, use `set_path_constraints` for CIRC, probe `move_group` with `wait_for_service` before `MoveItPy()` init, mock `MoveItPy` at the module level for tests.
 
 ---
 
@@ -290,40 +290,38 @@ if not exec_status:  # ExecutionStatus __bool__ → True only on SUCCEEDED
 `def("__bool__", [](ExecStatus& s) { return static_cast<bool>(s); })`]
 [VERIFIED: MoveItCpp::execute() → waitForExecution() → ExecutionStatus]
 
-### Pattern 5: MoveItPy Connection with Timeout (RECOMMENDED)
+### Pattern 5: MoveItPy Init — wait_for_service probe + direct call (RECOMMENDED)
 
 ```python
 # on_configure in URMovementController:
-import threading
+from moveit_msgs.srv import GetPlanningScene
 
 timeout: float = self.get_parameter('moveit_connection_timeout').value
 
-result_container: list = [None, None]  # [moveit_instance, exception]
-
-def _init_moveit() -> None:
-    try:
-        result_container[0] = MoveItPy(node_name='moveit_py_node')
-    except Exception as e:  # noqa: BLE001
-        result_container[1] = e
-
-init_thread = threading.Thread(target=_init_moveit, daemon=True)
-init_thread.start()
-init_thread.join(timeout=timeout)
-
-if init_thread.is_alive():
+# Step 1: probe move_group readiness via its well-known service.
+# This detects bad launch ordering cleanly before blocking on MoveItPy init.
+client = self.create_client(GetPlanningScene, '/move_group/get_planning_scene')
+if not client.wait_for_service(timeout_sec=timeout):
     self.get_logger().error(
-        f'MoveItPy failed to connect within {timeout}s timeout'
+        f'move_group not available after {timeout}s — is move_group running?'
     )
+    self.destroy_client(client)
     return TransitionCallbackReturn.FAILURE
+self.destroy_client(client)
 
-if result_container[1] is not None:
-    self.get_logger().error(f'MoveItPy connection failed: {result_container[1]}')
+# Step 2: init MoveItPy directly — no thread needed, move_group is confirmed up.
+try:
+    self._moveit = MoveItPy(node_name='moveit_py_node')
+except Exception as e:  # noqa: BLE001
+    self.get_logger().error(f'MoveItPy initialisation failed: {e}')
     return TransitionCallbackReturn.FAILURE
-
-self._moveit: MoveItPy = result_container[0]
 ```
 
-**Rationale:** `MoveItPy.__init__` is blocking. Wrapping in a thread with `join(timeout=)` is the correct pattern to honour `moveit_connection_timeout` without blocking `on_configure` indefinitely.
+**Rationale:** `wait_for_service` cleanly detects missing `move_group` with a
+configurable timeout (no daemon thread needed). The service check confirms
+`move_group` is actually ready to serve requests — more reliable than DDS node
+discovery. `MoveItPy.__init__` is then called directly inside `try/except` to
+catch genuine init errors (wrong group name, bad SRDF, etc.) separately.
 
 ### Pattern 6: Mocking MoveItPy in Tests (VERIFIED approach)
 
@@ -457,10 +455,10 @@ class PlanResultDTO(BaseModel):
 **Warning signs:** Clients see `GoalResponse.ACCEPT` followed immediately by `aborted` result.
 
 ### Pitfall 6: Speed/Acceleration Field Interpretation
-**What goes wrong:** `TrajectoryPathDTO.cartesian_speed` is in m/s (absolute), but PILZ `max_velocity_scaling_factor` is relative (0.0–1.0). Passing a raw m/s value > 1.0 as a scaling factor results in clamping or errors.
-**Why it happens:** The DTO spec says "m/s"; PILZ expects fractional scaling.
-**How to avoid (Phase 3 approach):** If `cartesian_speed == 0.0` (default), use a safe default scaling factor (e.g., `0.1`). If `0.0 < cartesian_speed <= 1.0`, pass through as scaling factor. If `> 1.0`, clamp to `1.0` and log a WARNING. Proper absolute-to-relative conversion is a Phase 5 (CON-05) concern.
-**Warning signs:** `cartesian_speed=2.0` passed as scaling factor silently gets treated as `1.0` (full speed).
+**What goes wrong:** `TrajectoryPathDTO.cartesian_speed` is in m/s (absolute), but PILZ `max_velocity_scaling_factor` is relative (0.0–1.0). The m/s → scaling factor conversion requires knowing the robot's maximum Cartesian endpoint speed, which depends on the URDF joint limits and kinematics — configuration-time data not available in Phase 3.
+**Why it happens:** The DTO spec says "m/s" (correct long-term API); PILZ expects fractional scaling. True conversion is CON-05 scope (Phase 5).
+**How to avoid (Phase 3 approach):** Always use a fixed safe default scaling factor of `0.1` regardless of the `cartesian_speed` value. The field is accepted in the DTO and message but not yet acted upon. Phase 5 will implement the conversion by computing a per-robot max Cartesian speed at node startup from the URDF.
+**Warning signs:** Any code that passes `cartesian_speed` directly (with or without clamping) as `max_velocity_scaling_factor` is incorrect — the units are incompatible.
 
 ---
 
@@ -505,8 +503,8 @@ class PilzPlannerService:
             params.planning_pipeline = self._PIPELINE
             params.planning_attempts = 1
             params.planning_time = 5.0
-            params.max_velocity_scaling_factor = self._to_scaling(path_dto.cartesian_speed)
-            params.max_acceleration_scaling_factor = self._to_scaling(path_dto.acceleration)
+            params.max_velocity_scaling_factor = 0.1    # Phase 3: m/s→scaling deferred to Phase 5 (CON-05)
+            params.max_acceleration_scaling_factor = 0.1  # Phase 3: m/s²→scaling deferred to Phase 5
 
             plan_result = self._planning_component.plan(single_plan_parameters=params)
 
@@ -541,7 +539,7 @@ class PilzPlannerService:
 |---|-------|---------|---------------|
 | A1 | `PlanRequestParameters(moveit_instance, '')` with empty namespace uses safe defaults (planner_id='', etc.) and allows direct attribute assignment | Pattern 1 | If empty string namespace causes parameter declaration errors, tests/configure may fail |
 | A2 | The `planning.pyi` stub types for `PlanningComponent` are importable as `from moveit.planning import PlanningComponent` | Anti-patterns | If only importable from a C-extension internal, type annotations would need `TYPE_CHECKING` guard |
-| A3 | `MoveItPy.__init__` raises an exception on connection failure/timeout (not just hangs forever) | Pattern 5 | If it hangs silently, the threading approach is needed to avoid infinite block |
+| A3 | `wait_for_service('/move_group/get_planning_scene')` correctly detects move_group readiness | Pattern 5 | Standard ROS2 pattern; service is advertised by move_group on startup |
 | A4 | Speed scaling from `cartesian_speed` (m/s) → passed as 0-1 fraction in Phase 3 is safe since PILZ respects robot velocity limits and will not exceed them | Common Pitfalls §6 | If robot doesn't have safety limits enforced, a scaling factor of 1.0 may be too fast |
 
 ---
@@ -662,7 +660,7 @@ class PilzPlannerService:
 - `PlanRequestParameters` attribute names: HIGH — verified from `.pyi` stub and C++ bindings
 - `MoveItPy.execute()` return type and semantics: HIGH — verified from C++ source + Python binding
 - CIRC `path_constraints` structure: HIGH — verified from PILZ official docs
-- MoveItPy connection timeout approach (threading): MEDIUM — pattern derived from known blocking behaviour; exception-on-timeout not explicitly confirmed
+- MoveItPy init approach (wait_for_service probe + direct call): HIGH — wait_for_service is a well-known ROS2 pattern; GetPlanningScene service is advertised by move_group on startup
 - `PlanRequestParameters` constructor behaviour with empty namespace: MEDIUM — derived from C++ `load()` source code defaults
 
 **Research date:** 2026-05-28

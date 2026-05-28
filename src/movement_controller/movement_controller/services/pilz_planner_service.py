@@ -24,13 +24,26 @@
 # CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
 # ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 # POSSIBILITY OF SUCH DAMAGE.
-"""PilzPlannerService — plans trajectories via the PILZ industrial motion planner.
+"""PilzPlannerService — maps TrajectoryPathDTO to PILZ planner parameters and executes planning."""
 
-Stub implementation. Full planner logic is wired in Phase 3 Plan 02.
-"""
 from __future__ import annotations
 
+from moveit.planning import MoveItPy, PlanRequestParameters
+from moveit_msgs.msg import BoundingVolume, Constraints, PositionConstraint
+from shape_msgs.msg import SolidPrimitive
+from geometry_msgs.msg import Pose
+
+from movement_controller.enums.motion_type_enum import MotionTypeEnum
+from movement_controller.models.plan_result_dto import PlanResultDTO
 from movement_controller.models.trajectory_path_dto import TrajectoryPathDTO
+
+_PILZ_PIPELINE = 'pilz_industrial_motion_planner'
+
+_PLANNER_IDS: dict[MotionTypeEnum, str] = {
+    MotionTypeEnum.LIN: 'LIN',
+    MotionTypeEnum.PTP: 'PTP',
+    MotionTypeEnum.CIRC: 'CIRC',
+}
 
 
 class PilzPlannerService:
@@ -40,15 +53,92 @@ class PilzPlannerService:
     injection. The owning controller manages the MoveItPy lifecycle.
     """
 
-    def __init__(self, moveit: object, planning_component: object) -> None:
+    def __init__(self, moveit: MoveItPy, planning_component: object) -> None:
         self._moveit = moveit
         self._planning_component = planning_component
 
-    def plan(self, path_dto: TrajectoryPathDTO) -> object:
-        """Plan a single trajectory path.
+    def plan(self, path_dto: TrajectoryPathDTO) -> PlanResultDTO:
+        """Plan a single trajectory path using the PILZ industrial motion planner.
 
-        Returns a plan result object. Raises NotImplementedError until Phase 3 Plan 02.
+        Sets start state to current robot state on every call (D-08), maps
+        ``MotionTypeEnum`` to the appropriate PILZ planner ID (D-07), and for CIRC
+        paths sets and clears path constraints in a try/finally block.
+
+        Args:
+            path_dto: Validated, immutable trajectory path descriptor.
+
+        Returns:
+            ``PlanResultDTO(success=True, trajectory=...)`` on success, or
+            ``PlanResultDTO(success=False, error_message=...)`` on failure.
         """
-        raise NotImplementedError(
-            'PilzPlannerService.plan() not yet implemented — see Phase 3 Plan 02'
+        planner_id = _PLANNER_IDS[path_dto.motion_type]
+
+        self._planning_component.set_start_state_to_current_state()
+        self._planning_component.set_goal_state(
+            pose_stamped_msg=path_dto.target_pose,
+            pose_link=path_dto.tool_frame or 'tool0',
         )
+
+        if path_dto.motion_type == MotionTypeEnum.CIRC:
+            constraints = self._build_circ_constraints(path_dto)
+            self._planning_component.set_path_constraints(constraints)
+
+        try:
+            params = PlanRequestParameters(self._moveit, '')
+            params.planner_id = planner_id
+            params.planning_pipeline = _PILZ_PIPELINE
+            params.planning_attempts = 1
+            params.planning_time = 5.0
+            params.max_velocity_scaling_factor = 0.1    # Phase 3: m/s→scaling deferred to Phase 5 (CON-05)
+            params.max_acceleration_scaling_factor = 0.1  # Phase 3: m/s²→scaling deferred to Phase 5
+            plan_result = self._planning_component.plan(single_plan_parameters=params)
+        finally:
+            if path_dto.motion_type == MotionTypeEnum.CIRC:
+                self._planning_component.set_path_constraints(Constraints())
+
+        if not plan_result:
+            return PlanResultDTO(
+                success=False,
+                error_message=f'PILZ {planner_id} planning failed for path {path_dto.path_id!r}',
+            )
+
+        return PlanResultDTO(success=True, trajectory=plan_result.trajectory)
+
+    @staticmethod
+    def _build_circ_constraints(path_dto: TrajectoryPathDTO) -> Constraints:
+        """Build path constraints for PILZ CIRC planner.
+
+        The ``constraints.name`` field selects the CIRC mode:
+        - ``'interim'``: ``circ_point`` is a waypoint on the arc.
+        - ``'center'``: ``circ_point`` is the center of the arc.
+
+        Args:
+            path_dto: Trajectory path with CIRC-specific fields populated.
+
+        Returns:
+            A ``Constraints`` message ready to be passed to ``set_path_constraints``.
+        """
+        constraints = Constraints()
+        constraints.name = path_dto.circ_type.value  # 'interim' or 'center'
+
+        pos_constraint = PositionConstraint()
+        pos_constraint.header.frame_id = path_dto.target_pose.header.frame_id
+        pos_constraint.link_name = path_dto.tool_frame or 'tool0'
+
+        sphere = SolidPrimitive()
+        sphere.type = SolidPrimitive.SPHERE
+        sphere.dimensions = [0.001]  # radius ~0; just a position marker
+
+        point_pose = Pose()
+        point_pose.position.x = path_dto.circ_point.x
+        point_pose.position.y = path_dto.circ_point.y
+        point_pose.position.z = path_dto.circ_point.z
+        point_pose.orientation.w = 1.0
+
+        bv = BoundingVolume()
+        bv.primitives = [sphere]
+        bv.primitive_poses = [point_pose]
+        pos_constraint.constraint_region = bv
+
+        constraints.position_constraints = [pos_constraint]
+        return constraints

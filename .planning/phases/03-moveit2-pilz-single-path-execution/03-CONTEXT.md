@@ -39,12 +39,19 @@ blend groups are flattened to single-path execution.
   for planning; it does not own `MoveItPy`.
 - **D-03:** The MoveItPy connection timeout is a **declared node parameter**:
   `moveit_connection_timeout` (float, default: `10.0` seconds, units: seconds).
-  Declared in `on_configure` alongside existing parameters with
-  `ParameterDescriptor(description=...)`.
-- **D-04:** If `MoveItPy` fails to connect within the timeout, `on_configure`
-  logs an ERROR and returns `TransitionCallbackReturn.FAILURE`. The node
-  stays in `UNCONFIGURED`. No activation is possible until the caller retries
-  `configure`.
+  Declared in `__init__` (not `on_configure`) with
+  `ParameterDescriptor(description=...)`. All parameters are declared in
+  `__init__` so they are introspectable before any lifecycle transition and
+  to avoid `ParameterAlreadyDeclaredException` on re-configure.
+- **D-04:** `on_configure` first probes `move_group` readiness by creating a
+  temporary `GetPlanningScene` service client and calling
+  `wait_for_service(timeout_sec=moveit_connection_timeout)`. If the service
+  is not available within the timeout, `on_configure` logs an ERROR
+  ('move_group not available after Xs — is move_group running?') and returns
+  `TransitionCallbackReturn.FAILURE`. If the service is available, the client
+  is destroyed and `MoveItPy()` is called directly inside a `try/except`.
+  Any init exception also logs ERROR and returns FAILURE. No daemon thread
+  or result_container is used — the service check makes them unnecessary.
 - **D-05:** `on_cleanup` destroys the `MoveItPy` instance and sets the
   reference to `None`. `on_configure` re-creates it. Mirrors the pattern for
   `_action_server` in Phase 2.

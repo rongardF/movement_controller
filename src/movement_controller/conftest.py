@@ -46,8 +46,49 @@ affected by sys.path.
 """
 import os
 import sys
+from unittest.mock import MagicMock
 
 _CONFIGURED = False
+
+# ---------------------------------------------------------------------------
+# Inject lightweight stubs for MoveIt2 and moveit_msgs if not installed.
+# These packages are only available when ros-jazzy-moveit is installed (real
+# robot or CI with full ROS2 stack). Unit and integration tests mock all moveit
+# interactions; the stubs let modules import cleanly without the full stack.
+# When the real packages ARE installed, the real modules take priority and these
+# stubs are never inserted.
+# ---------------------------------------------------------------------------
+_MOVEIT_MODULES = [
+    'moveit',
+    'moveit.planning',
+    'moveit.core',
+    'moveit.core.robot_state',
+    'moveit.core.robot_trajectory',
+    'moveit_msgs',
+    'moveit_msgs.msg',
+    'moveit_msgs.srv',
+]
+for _mod_name in _MOVEIT_MODULES:
+    if _mod_name not in sys.modules:
+        sys.modules[_mod_name] = MagicMock()
+
+
+# ---------------------------------------------------------------------------
+# Replace the auto-generated Constraints MagicMock with a minimal stub that
+# returns a fresh instance on every call (name defaults to '').
+# This allows tests to assert that the PILZ service clears constraints via a
+# fresh empty Constraints() and that the set/clear calls use distinct objects.
+# ---------------------------------------------------------------------------
+class _ConstraintsStub:
+    """Minimal stub for moveit_msgs.msg.Constraints used in tests."""
+
+    def __init__(self):
+        self.name: str = ''
+        self.position_constraints: list = []
+
+
+if 'moveit_msgs.msg' in sys.modules:
+    sys.modules['moveit_msgs.msg'].Constraints = _ConstraintsStub
 
 
 def pytest_configure(config):  # noqa: ARG001

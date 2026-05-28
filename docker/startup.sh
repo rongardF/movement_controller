@@ -1,3 +1,4 @@
+#!/usr/bin/env bash
 # Copyright (c) 2026, Movement Controller Contributors
 # All rights reserved.
 #
@@ -24,9 +25,29 @@
 # CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
 # ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 # POSSIBILITY OF SUCH DAMAGE.
+#
+# Devcontainer first-start script.
+# Runs once via postCreateCommand after the workspace volume is mounted.
+# Initialises rosdep and installs all ROS2 dependencies declared in package.xml
+# files, then configures the interactive shell via .bashrc.
+set -e
 
-from movement_controller.models.trajectory_path_dto import TrajectoryPathDTO
-from movement_controller.models.trajectory_goal_dto import TrajectoryGoalDTO
-from movement_controller.models.plan_result_dto import PlanResultDTO
+WORKSPACE=/workspaces/movement_controller
 
-__all__ = ['TrajectoryPathDTO', 'TrajectoryGoalDTO']
+echo "==> Initialising rosdep..."
+if [ ! -f /etc/ros/rosdep/sources.list.d/20-default.list ]; then
+    rosdep init
+fi
+rosdep update
+
+echo "==> Installing ROS2 dependencies from package.xml files..."
+# shellcheck source=/dev/null
+source /opt/ros/jazzy/setup.bash
+rosdep install --from-paths "${WORKSPACE}/src" --ignore-src -r -y
+
+echo "==> Configuring interactive shell (.bashrc)..."
+echo '. /opt/venv/bin/activate' >> ~/.bashrc
+echo 'source /opt/ros/jazzy/setup.bash' >> ~/.bashrc
+echo "if [ -f ${WORKSPACE}/install/setup.bash ]; then source ${WORKSPACE}/install/setup.bash; fi" >> ~/.bashrc
+
+echo "==> Devcontainer setup complete."

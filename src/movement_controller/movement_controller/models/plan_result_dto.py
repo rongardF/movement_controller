@@ -24,9 +24,33 @@
 # CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
 # ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 # POSSIBILITY OF SUCH DAMAGE.
+"""PlanResultDTO — internal result type for PilzPlannerService.plan()."""
 
-from movement_controller.models.trajectory_path_dto import TrajectoryPathDTO
-from movement_controller.models.trajectory_goal_dto import TrajectoryGoalDTO
-from movement_controller.models.plan_result_dto import PlanResultDTO
+from __future__ import annotations
 
-__all__ = ['TrajectoryPathDTO', 'TrajectoryGoalDTO']
+from typing import TYPE_CHECKING, Any
+
+from pydantic import BaseModel, ConfigDict, Field
+
+if TYPE_CHECKING:
+    from moveit.core.robot_trajectory import RobotTrajectory
+
+
+class PlanResultDTO(BaseModel):
+    """Internal immutable result returned by PilzPlannerService.plan().
+
+    Uses ``arbitrary_types_allowed=True`` so that a ``RobotTrajectory`` instance
+    (a non-Pydantic C++ extension type) can be stored in the ``trajectory`` field.
+    """
+
+    model_config = ConfigDict(arbitrary_types_allowed=True, frozen=True)
+
+    success: bool = Field(description='True if PILZ planning succeeded')
+    trajectory: Any = Field(
+        default=None,
+        description='RobotTrajectory from MoveItPy; None on failure',
+    )
+    error_message: str = Field(
+        default='',
+        description='Human-readable error; empty on success',
+    )

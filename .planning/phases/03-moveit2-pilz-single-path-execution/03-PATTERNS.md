@@ -305,8 +305,8 @@ class PilzPlannerService:
             params.planning_pipeline = _PILZ_PIPELINE
             params.planning_attempts = 1
             params.planning_time = 5.0
-            params.max_velocity_scaling_factor = min(path_dto.cartesian_speed, 1.0) or 0.1
-            params.max_acceleration_scaling_factor = min(path_dto.acceleration, 1.0) or 0.1
+            params.max_velocity_scaling_factor = 0.1    # Phase 3: m/s→scaling deferred to Phase 5 (CON-05)
+            params.max_acceleration_scaling_factor = 0.1  # Phase 3: m/s²→scaling deferred to Phase 5
 
             plan_result = self._planning_component.plan(single_plan_parameters=params)
         finally:
@@ -361,16 +361,15 @@ class PilzPlannerService:
 
 **License header:** identical BSD-3-Clause block; change module docstring to `"""PlanResultDTO — internal result type for PilzPlannerService.plan()."""`
 
-**Imports pattern** (lines 30–36 of trajectory_path_dto.py):
+**Imports pattern**:
 ```python
 from __future__ import annotations
 
-from typing import Any
-
+from moveit.core.robot_trajectory import RobotTrajectory
 from pydantic import BaseModel, ConfigDict, Field
 ```
 
-**Core model pattern** (mirroring `TrajectoryPathDTO`: `arbitrary_types_allowed=True` because `trajectory` holds a `RobotTrajectory` object; `frozen=True` for immutability):
+**Core model pattern** (`arbitrary_types_allowed=True` because `RobotTrajectory` is not a native Pydantic type; `frozen=True` for immutability):
 ```python
 class PlanResultDTO(BaseModel):
     """Internal result from PilzPlannerService.plan() — not a ROS2 message."""
@@ -378,7 +377,7 @@ class PlanResultDTO(BaseModel):
     model_config = ConfigDict(arbitrary_types_allowed=True, frozen=True)
 
     success: bool = Field(description='True if PILZ planning succeeded')
-    trajectory: Any = Field(
+    trajectory: RobotTrajectory | None = Field(
         default=None,
         description='RobotTrajectory object returned by MoveItPy; None on failure',
     )
@@ -388,7 +387,7 @@ class PlanResultDTO(BaseModel):
     )
 ```
 
-> Internal DTO — suffix `DTO` per project conventions. `trajectory` is typed `Any` to avoid importing `moveit.core.robot_trajectory.RobotTrajectory` at model definition time (the type is available only after `ros-jazzy-moveit` is installed). This is safe because `PlanResultDTO` is consumed only inside the package.
+> `RobotTrajectory` is imported directly from `moveit.core.robot_trajectory`. MoveIt2 (`ros-jazzy-moveit`) is always installed in the devcontainer via `rosdep` (`startup.sh`), so this import is guaranteed to succeed. No `try/except ImportError` guard is needed.
 
 ---
 

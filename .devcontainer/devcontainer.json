@@ -45,5 +45,5 @@
       }
     }
   },
-  "postCreateCommand": "echo '. /opt/venv/bin/activate' >> ~/.bashrc && echo 'source /opt/ros/jazzy/setup.bash' >> ~/.bashrc && echo 'if [ -f /workspaces/movement_controller/install/setup.bash ]; then source /workspaces/movement_controller/install/setup.bash; fi' >> ~/.bashrc"
+  "postCreateCommand": "bash /workspaces/movement_controller/docker/startup.sh"
 }

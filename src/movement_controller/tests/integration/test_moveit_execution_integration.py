@@ -152,13 +152,13 @@ def test_execute_trajectory_feedback_order(node_with_moveit):
     assert second_fb.status == 'completed'
 
 
-def test_execute_trajectory_aborts_on_plan_failure(node_with_moveit):
+def test_execute_trajectory_aborts_on_plan_failure(node_with_moveit, monkeypatch):
     """Planning failure → result.success=False, path_id in error_message, abort called."""
     error_msg = f'PILZ LIN planning failed for path {_UUID1!r}'
-    node_with_moveit._planner_service.plan.return_value = MagicMock(
-        success=False,
-        trajectory=None,
-        error_message=error_msg,
+    monkeypatch.setattr(
+        node_with_moveit._planner_service,
+        'plan',
+        MagicMock(return_value=MagicMock(success=False, trajectory=None, error_message=error_msg)),
     )
 
     mock_goal_handle = MagicMock()
@@ -168,11 +168,6 @@ def test_execute_trajectory_aborts_on_plan_failure(node_with_moveit):
     mock_goal_handle.succeed = MagicMock()
 
     result = asyncio.run(node_with_moveit._execute_callback(mock_goal_handle))
-
-    # Restore default mock for subsequent tests
-    node_with_moveit._planner_service.plan.return_value = MagicMock(
-        success=True, trajectory=MagicMock(), error_message=''
-    )
 
     assert result.success is False
     assert _UUID1 in result.error_message
@@ -180,11 +175,11 @@ def test_execute_trajectory_aborts_on_plan_failure(node_with_moveit):
     mock_goal_handle.succeed.assert_not_called()
 
 
-def test_execute_trajectory_aborts_on_execution_failure(node_with_moveit):
+def test_execute_trajectory_aborts_on_execution_failure(node_with_moveit, monkeypatch):
     """Execution failure → result.success=False, path_id in error_message, abort called."""
     failing_exec = MagicMock()
     failing_exec.__bool__ = MagicMock(return_value=False)
-    node_with_moveit._moveit.execute.return_value = failing_exec
+    monkeypatch.setattr(node_with_moveit._moveit, 'execute', MagicMock(return_value=failing_exec))
 
     mock_goal_handle = MagicMock()
     mock_goal_handle.request.paths = [_make_path_msg(_UUID1, 'LIN')]
@@ -193,11 +188,6 @@ def test_execute_trajectory_aborts_on_execution_failure(node_with_moveit):
     mock_goal_handle.succeed = MagicMock()
 
     result = asyncio.run(node_with_moveit._execute_callback(mock_goal_handle))
-
-    # Restore truthy execute return value
-    ok_exec = MagicMock()
-    ok_exec.__bool__ = MagicMock(return_value=True)
-    node_with_moveit._moveit.execute.return_value = ok_exec
 
     assert result.success is False
     assert _UUID1 in result.error_message

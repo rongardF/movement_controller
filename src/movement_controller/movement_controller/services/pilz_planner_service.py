@@ -28,7 +28,7 @@
 
 from __future__ import annotations
 
-from moveit.planning import MoveItPy, PlanRequestParameters
+from moveit.planning import MoveItPy, PlanRequestParameters, PlanningComponent
 from moveit_msgs.msg import BoundingVolume, Constraints, PositionConstraint
 from shape_msgs.msg import SolidPrimitive
 from geometry_msgs.msg import Pose
@@ -37,25 +37,17 @@ from movement_controller.enums.motion_type_enum import MotionTypeEnum
 from movement_controller.models.plan_result_dto import PlanResultDTO
 from movement_controller.models.trajectory_path_dto import TrajectoryPathDTO
 
-_PILZ_PIPELINE = 'pilz_industrial_motion_planner'
-
-_PLANNER_IDS: dict[MotionTypeEnum, str] = {
-    MotionTypeEnum.LIN: 'LIN',
-    MotionTypeEnum.PTP: 'PTP',
-    MotionTypeEnum.CIRC: 'CIRC',
-}
-
 
 class PilzPlannerService:
     """Wraps MoveItPy to plan a single path via the PILZ industrial motion planner.
 
-    Receives ``moveit`` (MoveItPy instance) and ``planning_component`` via constructor
+    Receives ``moveit`` (MoveItPy instance) and ``moveit_group_name`` via constructor
     injection. The owning controller manages the MoveItPy lifecycle.
     """
 
-    def __init__(self, moveit: MoveItPy, planning_component: object) -> None:
+    def __init__(self, moveit: MoveItPy, moveit_group_name: str) -> None:
         self._moveit = moveit
-        self._planning_component = planning_component
+        self._planning_component: PlanningComponent = self._moveit.get_planning_component(moveit_group_name)
 
     def plan(self, path_dto: TrajectoryPathDTO) -> PlanResultDTO:
         """Plan a single trajectory path using the PILZ industrial motion planner.
@@ -71,7 +63,7 @@ class PilzPlannerService:
             ``PlanResultDTO(success=True, trajectory=...)`` on success, or
             ``PlanResultDTO(success=False, error_message=...)`` on failure.
         """
-        planner_id = _PLANNER_IDS[path_dto.motion_type]
+        planner_id = path_dto.motion_type.value  # 'LIN', 'PTP', or 'CIRC'
 
         self._planning_component.set_start_state_to_current_state()
         self._planning_component.set_goal_state(
@@ -86,8 +78,8 @@ class PilzPlannerService:
         try:
             params = PlanRequestParameters(self._moveit, '')
             params.planner_id = planner_id
-            params.planning_pipeline = _PILZ_PIPELINE
-            params.planning_attempts = 1
+            params.planning_pipeline = 'pilz_industrial_motion_planner'
+            params.planning_attempts = 3
             params.planning_time = 5.0
             params.max_velocity_scaling_factor = 0.1    # Phase 3: m/s→scaling deferred to Phase 5 (CON-05)
             params.max_acceleration_scaling_factor = 0.1  # Phase 3: m/s²→scaling deferred to Phase 5

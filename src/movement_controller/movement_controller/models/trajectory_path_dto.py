@@ -120,7 +120,7 @@ class TrajectoryPathDTO(BaseModel):
                     f'{ros_msg.circ_type!r}; must be "interim" or "center"'
                 )
         else:
-            circ_type = CircTypeEnum(ros_msg.circ_type) if ros_msg.circ_type else CircTypeEnum.INTERIM
+            circ_type = CircTypeEnum(ros_msg.circ_type) if ros_msg.circ_type else CircTypeEnum.INTERIM  # FIXME: this can raise an exception
 
         return cls(
             path_id=ros_msg.path_id,

@@ -59,11 +59,7 @@ class URMovementController(LifecycleNode):
         self._executing_lock: Lock = Lock()
         self._moveit: MoveItPy | None = None
         self._planner_service: PilzPlannerService | None = None
-        self.declare_parameter(
-            'action_server_name',
-            'movement_controller/execute_trajectory',
-            ParameterDescriptor(description='ROS2 action server name for ExecuteTrajectory action'),
-        )
+
         self.declare_parameter(
             'moveit_group_name',
             'ur_manipulator',
@@ -80,9 +76,8 @@ class URMovementController(LifecycleNode):
     def on_configure(self, state: LifecycleState) -> TransitionCallbackReturn:
         self.get_logger().info(f'Configuring from state: {state.label}')
 
-        action_server_name = self.get_parameter('action_server_name').value
-        moveit_group_name = self.get_parameter('moveit_group_name').value
-        timeout: float = self.get_parameter('moveit_connection_timeout').value
+        moveit_group_name = self.get_parameter('moveit_group_name').get_parameter_value().string_value
+        timeout: float = self.get_parameter('moveit_connection_timeout').get_parameter_value().double_value
 
         client = self.create_client(GetPlanningScene, '/move_group/get_planning_scene')
         if not client.wait_for_service(timeout_sec=timeout):
@@ -95,23 +90,25 @@ class URMovementController(LifecycleNode):
 
         try:
             self._moveit = MoveItPy(node_name='moveit_py_node')
-            planning_component = self._moveit.get_planning_component(moveit_group_name)
-            self._planner_service = PilzPlannerService(self._moveit, planning_component)
+            self._planner_service = PilzPlannerService(self._moveit, moveit_group_name)
         except Exception as e:
             self.get_logger().error(f'MoveItPy initialisation failed: {e}')
+            if self._moveit is not None:
+                self._moveit.shutdown()
+                self._moveit = None
             return TransitionCallbackReturn.FAILURE
 
-        self.get_logger().info(f'MoveItPy connected; planning group: {moveit_group_name}')
+        self.get_logger().info(f'MoveItPy connected - planning group: {moveit_group_name}')
 
         self._action_server = ActionServer(
             self,
             ExecuteTrajectory,
-            action_server_name,
+            "movement_controller/execute_trajectory",
             execute_callback=self._execute_callback,
             goal_callback=self._goal_callback,
             callback_group=ReentrantCallbackGroup(),
         )
-        self.get_logger().info(f'Action server created at: {action_server_name}')
+        self.get_logger().info(f'Action server created at: movement_controller/execute_trajectory')
 
         return TransitionCallbackReturn.SUCCESS
 
@@ -132,7 +129,9 @@ class URMovementController(LifecycleNode):
         if self._action_server is not None:
             self._action_server.destroy()
             self._action_server = None
-        self._moveit = None
+        if self._moveit is not None:
+            self._moveit.shutdown()
+            self._moveit = None
         self._planner_service = None
         return TransitionCallbackReturn.SUCCESS
 
@@ -171,6 +170,15 @@ class URMovementController(LifecycleNode):
             goal_dto = TrajectoryGoalDTO.from_ros_msg(goal_handle.request)
             groups = TrajectoryGrouper.group(goal_dto.paths)
             completed_ids: list[str] = []
+
+            if self._planner_service is None or self._moveit is None:
+                err = 'Planner service or MoveItPy not initialised'
+                self.get_logger().error(err)
+                result = ExecuteTrajectory.Result()
+                result.success = False
+                result.error_message = err
+                goal_handle.abort()
+                return result
 
             for group in groups:
                 for path in group:

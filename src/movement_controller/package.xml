@@ -39,13 +39,12 @@
   <!-- UR dependencies (UR-01, UR-02) -->
   <exec_depend>ur_robot_driver</exec_depend>
   <exec_depend>ur_moveit_config</exec_depend>
-
+  
   <!-- Marks this package as containing ROS2 interface definitions -->
   <member_of_group>rosidl_interface_packages</member_of_group>
 
   <!-- Test dependencies -->
   <test_depend>ament_cmake_pytest</test_depend>
-  <test_depend>pytest</test_depend>
 
   <export>
     <build_type>ament_cmake</build_type>

@@ -74,8 +74,14 @@ def mock_moveit():
 
 @pytest.fixture
 def service(mock_moveit, mock_planning_component):
-    """PilzPlannerService with injected mocks."""
-    return PilzPlannerService(mock_moveit, mock_planning_component)
+    """PilzPlannerService with injected mocks.
+
+    Wires mock_moveit.get_planning_component to return mock_planning_component so
+    that assertions on mock_planning_component still work after the constructor change
+    that now calls get_planning_component(group_name) internally.
+    """
+    mock_moveit.get_planning_component.return_value = mock_planning_component
+    return PilzPlannerService(mock_moveit, 'ur_manipulator')
 
 
 @pytest.fixture(autouse=True)
@@ -87,9 +93,7 @@ def patch_plan_request_params():
         yield mock_cls
 
 
-# ---------------------------------------------------------------------------
-# Success-path tests
-# ---------------------------------------------------------------------------
+# region: Success-path tests
 
 
 def test_plan_lin_success(service, mock_planning_component, patch_plan_request_params):
@@ -179,10 +183,8 @@ def test_plan_uses_default_speed_scaling(service, patch_plan_request_params):
     assert params.max_acceleration_scaling_factor == 0.1
 
 
-# ---------------------------------------------------------------------------
-# Failure-path tests
-# ---------------------------------------------------------------------------
-
+# endregion: Success-path tests
+# region: Failure-path tests
 
 def test_plan_returns_failure_when_planning_fails(
     service, mock_planning_component, patch_plan_request_params
@@ -224,3 +226,5 @@ def test_plan_circ_clears_constraints_on_planning_failure(
     # Second call must be the clear call (empty Constraints)
     second_constraints = calls[1].args[0]
     assert second_constraints.name == ''
+
+# endregion: Failure-path tests

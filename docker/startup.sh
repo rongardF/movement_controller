@@ -38,7 +38,8 @@ echo "==> Initialising rosdep..."
 if [ ! -f /etc/ros/rosdep/sources.list.d/20-default.list ]; then
     rosdep init
 fi
-rosdep update
+rosdep update --rosdistro=jazzy
+apt-get update
 
 echo "==> Installing ROS2 dependencies from package.xml files..."
 # shellcheck source=/dev/null

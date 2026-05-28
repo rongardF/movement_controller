@@ -38,9 +38,13 @@ from rclpy.executors import MultiThreadedExecutor
 from rclpy.lifecycle import LifecycleNode
 from rclpy.lifecycle.node import LifecycleState, TransitionCallbackReturn
 
+from moveit.planning import MoveItPy
+from moveit_msgs.srv import GetPlanningScene
+
 from movement_controller.action import ExecuteTrajectory
 from movement_controller.enums.feedback_status_enum import FeedbackStatusEnum
 from movement_controller.models.trajectory_goal_dto import TrajectoryGoalDTO
+from movement_controller.services.pilz_planner_service import PilzPlannerService
 from movement_controller.utils.trajectory_grouper import TrajectoryGrouper
 
 
@@ -53,12 +57,8 @@ class URMovementController(LifecycleNode):
         self._is_active: bool = False
         self._is_executing: bool = False
         self._executing_lock: Lock = Lock()
-
-    # region: lifecycle callbacks
-
-    def on_configure(self, state: LifecycleState) -> TransitionCallbackReturn:
-        self.get_logger().info(f'Configuring from state: {state.label}')
-
+        self._moveit: MoveItPy | None = None
+        self._planner_service: PilzPlannerService | None = None
         self.declare_parameter(
             'action_server_name',
             'movement_controller/execute_trajectory',
@@ -69,8 +69,40 @@ class URMovementController(LifecycleNode):
             'ur_manipulator',
             ParameterDescriptor(description='MoveIt2 planning group name (used from Phase 3 onward)'),
         )
+        self.declare_parameter(
+            'moveit_connection_timeout',
+            10.0,
+            ParameterDescriptor(description='Seconds to wait for MoveItPy to connect before failing on_configure'),
+        )
+
+    # region: lifecycle callbacks
+
+    def on_configure(self, state: LifecycleState) -> TransitionCallbackReturn:
+        self.get_logger().info(f'Configuring from state: {state.label}')
 
         action_server_name = self.get_parameter('action_server_name').value
+        moveit_group_name = self.get_parameter('moveit_group_name').value
+        timeout: float = self.get_parameter('moveit_connection_timeout').value
+
+        client = self.create_client(GetPlanningScene, '/move_group/get_planning_scene')
+        if not client.wait_for_service(timeout_sec=timeout):
+            self.get_logger().error(
+                f'move_group not available after {timeout}s — is move_group running?'
+            )
+            self.destroy_client(client)
+            return TransitionCallbackReturn.FAILURE
+        self.destroy_client(client)
+
+        try:
+            self._moveit = MoveItPy(node_name='moveit_py_node')
+            planning_component = self._moveit.get_planning_component(moveit_group_name)
+            self._planner_service = PilzPlannerService(self._moveit, planning_component)
+        except Exception as e:
+            self.get_logger().error(f'MoveItPy initialisation failed: {e}')
+            return TransitionCallbackReturn.FAILURE
+
+        self.get_logger().info(f'MoveItPy connected; planning group: {moveit_group_name}')
+
         self._action_server = ActionServer(
             self,
             ExecuteTrajectory,
@@ -100,6 +132,8 @@ class URMovementController(LifecycleNode):
         if self._action_server is not None:
             self._action_server.destroy()
             self._action_server = None
+        self._moveit = None
+        self._planner_service = None
         return TransitionCallbackReturn.SUCCESS
 
     # endregion: lifecycle callbacks

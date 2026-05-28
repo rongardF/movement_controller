@@ -120,8 +120,6 @@ class URMovementController(LifecycleNode):
     def on_deactivate(self, state: LifecycleState) -> TransitionCallbackReturn:
         self.get_logger().info(f'Deactivating from state: {state.label}')
         self._is_active = False
-        with self._executing_lock:
-            self._is_executing = False  # signal any in-flight execution to wind down
         return TransitionCallbackReturn.SUCCESS
 
     def on_cleanup(self, state: LifecycleState) -> TransitionCallbackReturn:
@@ -177,11 +175,25 @@ class URMovementController(LifecycleNode):
                 result = ExecuteTrajectory.Result()
                 result.success = False
                 result.error_message = err
-                goal_handle.abort()
+                try:
+                    goal_handle.abort()
+                except Exception:
+                    pass  # already in terminal state (client cancelled concurrently)
                 return result
 
             for group in groups:
                 for path in group:
+                    if not self._is_active:
+                        self.get_logger().warn('Execution halted: node deactivated mid-trajectory')
+                        result = ExecuteTrajectory.Result()
+                        result.success = False
+                        result.error_message = 'Node deactivated during execution'
+                        try:
+                            goal_handle.abort()
+                        except Exception:
+                            pass  # already in terminal state (client cancelled concurrently)
+                        return result
+
                     # Publish executing feedback per-path (D-15)
                     fb = ExecuteTrajectory.Feedback()
                     fb.status = FeedbackStatusEnum.EXECUTING.value
@@ -197,7 +209,10 @@ class URMovementController(LifecycleNode):
                         result = ExecuteTrajectory.Result()
                         result.success = False
                         result.error_message = plan_result.error_message
-                        goal_handle.abort()
+                        try:
+                            goal_handle.abort()
+                        except Exception:
+                            pass  # already in terminal state (client cancelled concurrently)
                         return result
 
                     # Execute trajectory — NO blocking kwarg (Research Pitfall 4)
@@ -208,7 +223,10 @@ class URMovementController(LifecycleNode):
                         result = ExecuteTrajectory.Result()
                         result.success = False
                         result.error_message = err
-                        goal_handle.abort()
+                        try:
+                            goal_handle.abort()
+                        except Exception:
+                            pass  # already in terminal state (client cancelled concurrently)
                         return result
 
                     # Publish completed feedback per-path (D-15)
@@ -230,7 +248,10 @@ class URMovementController(LifecycleNode):
             result = ExecuteTrajectory.Result()
             result.success = False
             result.error_message = str(e)
-            goal_handle.abort()
+            try:
+                goal_handle.abort()
+            except Exception:
+                pass  # already in terminal state
             return result
 
         finally:

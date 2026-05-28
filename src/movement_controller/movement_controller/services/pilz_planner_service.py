@@ -71,11 +71,10 @@ class PilzPlannerService:
             pose_link=path_dto.tool_frame or 'tool0',
         )
 
-        if path_dto.motion_type == MotionTypeEnum.CIRC:
-            constraints = self._build_circ_constraints(path_dto)
-            self._planning_component.set_path_constraints(constraints)
-
         try:
+            if path_dto.motion_type == MotionTypeEnum.CIRC:
+                constraints = self._build_circ_constraints(path_dto)
+                self._planning_component.set_path_constraints(constraints)
             params = PlanRequestParameters(self._moveit, '')
             params.planner_id = planner_id
             params.planning_pipeline = 'pilz_industrial_motion_planner'

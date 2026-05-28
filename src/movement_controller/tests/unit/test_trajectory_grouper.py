@@ -94,8 +94,7 @@ def test_mixed_grouping_d07_example():
 
 
 def test_first_path_always_starts_new_group_even_with_positive_blend_radius():
-    """First path always starts a new group regardless of its blend_radius.
-
+    """First path always starts a new group regardless of its blend_radius. 
     Subsequent paths with br>0 all merge into that group.
     """
     groups = TrajectoryGrouper.group([_p(_UUID_A, 0.5), _p(_UUID_B, 0.3), _p(_UUID_C, 0.3)])

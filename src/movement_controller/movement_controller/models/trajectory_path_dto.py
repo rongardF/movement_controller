@@ -79,7 +79,7 @@ class TrajectoryPathDTO(BaseModel):
         description='CIRC arc reference point; ignored for LIN/PTP',
     )
 
-    @field_validator('path_id')
+    @field_validator('path_id', mode='before')
     @classmethod
     def validate_path_id(cls, v: str) -> str:
         if not v:
@@ -97,25 +97,31 @@ class TrajectoryPathDTO(BaseModel):
             raise ValueError(f'blend_radius must be a number, got {v!r}')
         return 0.0 if f < 0 else f
 
-    @field_validator('circ_type', mode='before')
-    @classmethod
-    def coerce_circ_type(cls, v: object) -> object:
-        # ROS2 message string fields default to ''; treat empty as INTERIM.
-        if v == '' or v is None:
-            return CircTypeEnum.INTERIM.value
-        return v
-
     @classmethod
     def from_ros_msg(cls, ros_msg: TrajectoryPath) -> TrajectoryPathDTO:
         """Construct a TrajectoryPathDTO from a TrajectoryPath ROS2 message."""
+
+        try:
+            motion_type = MotionTypeEnum(ros_msg.motion_type)
+        except ValueError:
+            raise ValueError(f'Invalid motion_type: {ros_msg.motion_type!r}')
+        
+        try:
+            if ros_msg.circ_type == '' or ros_msg.circ_type is None:
+                circ_type = CircTypeEnum.INTERIM
+            else:   
+                circ_type = CircTypeEnum(ros_msg.circ_type)
+        except ValueError:
+            raise ValueError(f'Invalid circ_type: {ros_msg.circ_type!r}')
+
         return cls(
             path_id=ros_msg.path_id,
-            motion_type=ros_msg.motion_type,
+            motion_type=motion_type,
             target_pose=ros_msg.target_pose,
             blend_radius=ros_msg.blend_radius,
             cartesian_speed=ros_msg.cartesian_speed,
             acceleration=ros_msg.acceleration,
             tool_frame=ros_msg.tool_frame,
-            circ_type=ros_msg.circ_type,
+            circ_type=circ_type,
             circ_point=ros_msg.circ_point,
         )

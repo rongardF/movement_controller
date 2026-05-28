@@ -122,7 +122,7 @@ class URMovementController(LifecycleNode):
         # 3. Full goal validation via DTO — reset executing flag on failure
         try:
             TrajectoryGoalDTO.from_ros_msg(goal)
-        except ValidationError as e:
+        except (ValidationError, ValueError) as e:
             self.get_logger().error(f'Goal rejected: {e}')
             with self._executing_lock:
                 self._is_executing = False

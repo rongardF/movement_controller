@@ -55,12 +55,13 @@ Plans:
 
 **Covers:** MOT-01, MOT-02, MOT-05
 
-### Plans
+**Plans:** 4 plans
 
-1. **MoveIt2 integration** — Instantiate `MoveItPy`, obtain `ur_manipulator` planning component; handle connection with timeout + `DependencyFailure` on timeout
-2. **PILZ planner service** — Implement `PilzPlannerService` in `services/`; map `TrajectoryPathDTO` motion type to PILZ pipeline ID; call `plan()` and return result object
-3. **Single-path execution** — Wire planner service into action server; plan then execute one path; send `executing` feedback on start, `completed` feedback on finish
-4. **Simulation smoke test** — `colcon test` integration test: spin up node against fake MoveGroup mock, send a 1-path goal, assert both feedback messages received and result is success
+Plans:
+- [ ] 03-01-PLAN.md — MoveIt2 integration (ros-jazzy-moveit Dockerfile; MoveItPy init with timeout in on_configure; on_cleanup teardown)
+- [ ] 03-02-PLAN.md — PILZ planner service (PlanResultDTO; PilzPlannerService with plan() mapping MotionTypeEnum to PILZ pipelines; unit tests)
+- [ ] 03-03-PLAN.md — Single-path execution (CIRC validation in goal_callback; flatten-groups loop with plan+execute+feedback per path in execute_callback)
+- [ ] 03-04-PLAN.md — Simulation smoke test (8 integration tests with mocked MoveItPy; 1-path success, plan failure, execution failure, CIRC/concurrent rejection)
 
 **Success criteria:**
 - Single LIN, PTP, and CIRC path each plan and execute without error in simulation

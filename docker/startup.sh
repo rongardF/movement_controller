@@ -47,8 +47,11 @@ source /opt/ros/jazzy/setup.bash
 rosdep install --from-paths "${WORKSPACE}/src" --ignore-src -r -y
 
 echo "==> Configuring interactive shell (.bashrc)..."
-echo '. /opt/venv/bin/activate' >> ~/.bashrc
-echo 'source /opt/ros/jazzy/setup.bash' >> ~/.bashrc
-echo "if [ -f ${WORKSPACE}/install/setup.bash ]; then source ${WORKSPACE}/install/setup.bash; fi" >> ~/.bashrc
+grep -qF '. /opt/venv/bin/activate' ~/.bashrc \
+  || echo '. /opt/venv/bin/activate' >> ~/.bashrc
+grep -qF 'source /opt/ros/jazzy/setup.bash' ~/.bashrc \
+  || echo 'source /opt/ros/jazzy/setup.bash' >> ~/.bashrc
+grep -qF 'install/setup.bash' ~/.bashrc \
+  || echo "if [ -f ${WORKSPACE}/install/setup.bash ]; then source ${WORKSPACE}/install/setup.bash; fi" >> ~/.bashrc
 
 echo "==> Devcontainer setup complete."

@@ -24,45 +24,41 @@
 # CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
 # ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 # POSSIBILITY OF SUCH DAMAGE.
-"""URMovementController — ROS2 LifecycleNode for trajectory execution."""
+"""URMovementController — ROS2 LifecycleNode for UR robot trajectory execution."""
 
-import threading #FIXME: HUMAN REVIEW COMMENT: better to use `from threading import Lock` and then use `Lock()` instead of `threading.Lock()`, to keep the code cleaner and more concise
+from threading import Lock
 
-import rclpy #FIXME: HUMAN REVIEW COMMENT: better to use `from rclpy import init, spin, shutdown` and then call `init()`, `spin(node)`, and `shutdown()` instead of `rclpy.init()`, etc., to keep the code cleaner and more concise
-from lifecycle_msgs.msg import State
+import rclpy
+from pydantic import ValidationError
 from rcl_interfaces.msg import ParameterDescriptor
 from rclpy.action import ActionServer, GoalResponse
 from rclpy.action.server import ServerGoalHandle
 from rclpy.callback_groups import ReentrantCallbackGroup
+from rclpy.executors import MultiThreadedExecutor
 from rclpy.lifecycle import LifecycleNode
 from rclpy.lifecycle.node import LifecycleState, TransitionCallbackReturn
 
 from movement_controller.action import ExecuteTrajectory
 from movement_controller.enums.feedback_status_enum import FeedbackStatusEnum
-from movement_controller.models.trajectory_path_dto import TrajectoryPathDTO
+from movement_controller.models.trajectory_goal_dto import TrajectoryGoalDTO
 from movement_controller.utils.trajectory_grouper import TrajectoryGrouper
 
 
 class URMovementController(LifecycleNode):
-    """LifecycleNode that exposes an ExecuteTrajectory action server."""  #FIXME: HUMAN REVIEW COMMENT: this should be more generic since the not about exposign this action. You can at least leave a comment here that it should be ammended in the future once more functionality is added.
+    """LifecycleNode that exposes an ExecuteTrajectory action server for UR robots."""
 
     def __init__(self, node_name: str = 'ur_movement_controller') -> None:
         super().__init__(node_name)
         self._action_server: ActionServer | None = None
+        self._is_active: bool = False
         self._is_executing: bool = False
-        self._executing_lock = threading.Lock() #FIXME: HUMAN REVIEW COMMENT: should have type annotation for this lock, e.g. `self._executing_lock: Lock = Lock()`, to make it clear what type of lock it is and to help with static analysis and readability
+        self._executing_lock: Lock = Lock()
 
-    #FIXME: HUMAN REVIEW COMMENT: instead of having code sections defined as headers as below use the `region: <block-description>` and `endregion` comments that some IDEs support, which would allow for better code folding and navigation. For example:
-    # `# region: lifecycle callbacks` and `# endregion: lifecycle callbacks` instead of the dashed headers. Also, add info about this preference to instructions so you know to follow it when writing code.
-    
-    # ------------------------------------------------------------------
-    # Lifecycle callbacks
-    # ------------------------------------------------------------------
+    # region: lifecycle callbacks
 
     def on_configure(self, state: LifecycleState) -> TransitionCallbackReturn:
         self.get_logger().info(f'Configuring from state: {state.label}')
 
-        #FIXME: HUMAN REVIEW COMMENT: I know we decided that action server name will be given as a parameter, but now I think it should be hardcoded value as `movement_controller/execute_trajectory`, since this is a specific controller for UR and we don't expect to have multiple instances running at the same time. It would also simplify the code and avoid potential issues with parameter configuration. What do you think?
         self.declare_parameter(
             'action_server_name',
             'movement_controller/execute_trajectory',
@@ -89,10 +85,14 @@ class URMovementController(LifecycleNode):
 
     def on_activate(self, state: LifecycleState) -> TransitionCallbackReturn:
         self.get_logger().info(f'Activating from state: {state.label}')
+        self._is_active = True
         return TransitionCallbackReturn.SUCCESS
 
     def on_deactivate(self, state: LifecycleState) -> TransitionCallbackReturn:
         self.get_logger().info(f'Deactivating from state: {state.label}')
+        self._is_active = False
+        with self._executing_lock:
+            self._is_executing = False  # signal any in-flight execution to wind down
         return TransitionCallbackReturn.SUCCESS
 
     def on_cleanup(self, state: LifecycleState) -> TransitionCallbackReturn:
@@ -102,52 +102,40 @@ class URMovementController(LifecycleNode):
             self._action_server = None
         return TransitionCallbackReturn.SUCCESS
 
-    # ------------------------------------------------------------------
-    # Action server callbacks
-    # ------------------------------------------------------------------
+    # endregion: lifecycle callbacks
+
+    # region: action server callbacks
 
     def _goal_callback(self, goal: ExecuteTrajectory.Goal) -> GoalResponse:
-        # 1. Lifecycle state check — must be ACTIVE
-        if self._state_machine.current_state[0] != State.PRIMARY_STATE_ACTIVE: #FIXME: HUMAN REVIEW COMMENT: I think callbacks will not execute before it is in 'actvie' state so perhaps this is redundant guard? Please research and double chekc this, here is reference https://design.ros2.org/articles/node_lifecycle.html
-            self.get_logger().error(
-                f'Goal rejected: node is not active '
-                f'(current state: {self._state_machine.current_state[1]})'
-            )
+        # 1. Node must be active to accept goals
+        if not self._is_active:
+            self.get_logger().error('Goal rejected: node is not active')
             return GoalResponse.REJECT
 
-        # 2. Mutex check — only one goal at a time
+        # 2. Only one goal at a time — check and set atomically to prevent TOCTOU race
         with self._executing_lock:
             if self._is_executing:
                 self.get_logger().error('Goal rejected: another goal is already executing')
                 return GoalResponse.REJECT
+            self._is_executing = True
 
-        # 3. Non-empty paths list
-        if not goal.paths:  #FIXME: HUMAN REVIEW COMMENT:  I think we could perhaps move this code into `TrajectoryGoalDTO` validation, so that we ensure any instance of `TrajectoryGoalDTO` is always valid and we can keep this kind of logic out of the controller. Here we could simply have a try-except block when creating the DTO and catch any validation errors. What do you think?
-            self.get_logger().error('Goal rejected: paths list is empty')
+        # 3. Full goal validation via DTO — reset executing flag on failure
+        try:
+            TrajectoryGoalDTO.from_ros_msg(goal)
+        except ValidationError as e:
+            self.get_logger().error(f'Goal rejected: {e}')
+            with self._executing_lock:
+                self._is_executing = False
             return GoalResponse.REJECT
-
-        # 4. Per-path validation
-        for path in goal.paths:
-            if not path.path_id:
-                self.get_logger().error('Goal rejected: path_id is empty for a path')
-                return GoalResponse.REJECT
-            if path.motion_type not in ('LIN', 'PTP', 'CIRC'):
-                self.get_logger().error(
-                    f'Goal rejected: invalid motion_type {path.motion_type!r}'
-                )
-                return GoalResponse.REJECT
 
         return GoalResponse.ACCEPT
 
     async def _execute_callback(
         self, goal_handle: ServerGoalHandle
     ) -> ExecuteTrajectory.Result:
-        with self._executing_lock:
-            self._is_executing = True
-
         try:
-            paths = [TrajectoryPathDTO.from_ros_msg(p) for p in goal_handle.request.paths]
-            groups = TrajectoryGrouper.group(paths)
+            goal_dto = TrajectoryGoalDTO.from_ros_msg(goal_handle.request)
+            groups = TrajectoryGrouper.group(goal_dto.paths)
 
             for group in groups:
                 path_ids = [p.path_id for p in group]
@@ -165,7 +153,7 @@ class URMovementController(LifecycleNode):
             result = ExecuteTrajectory.Result()
             result.success = True
             result.error_message = ''
-            result.trajectory_paths_completed = [p.path_id for p in paths]
+            result.trajectory_paths_completed = [p.path_id for p in goal_dto.paths]
             goal_handle.succeed()
             return result
 
@@ -181,12 +169,16 @@ class URMovementController(LifecycleNode):
             with self._executing_lock:
                 self._is_executing = False
 
+    # endregion: action server callbacks
+
 
 def main(args=None) -> None:
     rclpy.init(args=args)
     node = URMovementController()
+    executor = MultiThreadedExecutor()
+    executor.add_node(node)
     try:
-        rclpy.spin(node)
+        executor.spin()
     finally:
         node.destroy_node()
         rclpy.shutdown()

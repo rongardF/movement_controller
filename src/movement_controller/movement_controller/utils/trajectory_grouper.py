@@ -42,23 +42,17 @@ class TrajectoryGrouper:
         - Any subsequent path with blend_radius <= 0 starts a new group.
 
         Args:
-            paths: Non-empty list of validated TrajectoryPathDTO objects.
+            paths: Non-empty list of validated TrajectoryPathDTO objects with unique
+                   path_id values (guaranteed by TrajectoryGoalDTO validation).
 
         Returns:
             List of groups, where each group is a list of TrajectoryPathDTO objects.
 
         Raises:
-            ValueError: If paths is empty or contains duplicate path_id values.
+            ValueError: If paths is empty.
         """
         if not paths:
             raise ValueError('paths list must not be empty')
-
-        # Pre-validation: reject duplicate path_id values
-        seen_ids: set[str] = set()  #FIXME: HUMAN REVIEW COMMENT: I think this type of validation should be done before we accept the goal in the controller, perhaps in the DTO validation, to ensure that any instance of `TrajectoryGoalDTO` is always valid and we can keep this kind of logic out of the controller
-        for path in paths:
-            if path.path_id in seen_ids:
-                raise ValueError(f'Duplicate path_id: {path.path_id!r}')
-            seen_ids.add(path.path_id)
 
         # Grouping loop
         groups: list[list[TrajectoryPathDTO]] = []

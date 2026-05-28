@@ -26,9 +26,16 @@
 # POSSIBILITY OF SUCH DAMAGE.
 """TrajectoryGoalDTO — Pydantic DTO wrapping the ExecuteTrajectory goal."""
 
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
+
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from movement_controller.models.trajectory_path_dto import TrajectoryPathDTO
+
+if TYPE_CHECKING:
+    from movement_controller.action import ExecuteTrajectory
 
 
 class TrajectoryGoalDTO(BaseModel):
@@ -37,14 +44,22 @@ class TrajectoryGoalDTO(BaseModel):
     model_config = ConfigDict(frozen=True)
 
     paths: list[TrajectoryPathDTO] = Field(
-        description='Non-empty list of trajectory paths to execute'
+        description='Non-empty ordered list of trajectory paths to execute'
     )
 
-    @field_validator('paths')  #FIXME: HUMAN REVIEW COMMENT: is it validating before or after? Perhaps we shoudl be explicit about this? This applies here and in other places where we use field validators, it would be good to be consistent and clear about when the validation is happening
+    @field_validator('paths', mode='after')
     @classmethod
-    def validate_paths_non_empty(cls, v: list) -> list:
-        if not v:    #FIXME: HUMAN REVIEW COMMENT: I think we should also validate for duplicate path_ids here, to ensure that all paths in the list have unique identifiers. This would help to prevent potential issues during trajectory execution where duplicate path_ids could cause confusion or errors. We could use a set to track seen path_ids and raise a ValueError if we encounter a duplicate. What do you think?
-            raise ValueError('paths list must be non-empty')
+    def validate_paths(cls, v: list[TrajectoryPathDTO]) -> list[TrajectoryPathDTO]:
+        if not v:
+            raise ValueError('paths must not be empty')
+        seen: set[str] = set()
+        for path in v:
+            if path.path_id in seen:
+                raise ValueError(f'duplicate path_id: {path.path_id!r}')
+            seen.add(path.path_id)
         return v
-    
-     #FIXME: HUMAN REVIEW COMMENT: I think it would simplify code if we had a static method 'from_ros_msg' that takes the ROS message and constructs the DTO, instead of having this logic in the controller. It would also help to keep the controller code cleaner and more focused on its main responsibilities. It would internally convert all 'TrajectoryPath' messages to 'TrajectoryPathDTO' instances, so the controller can work with the DTOs directly. What do you think?
+
+    @classmethod
+    def from_ros_msg(cls, goal_msg: ExecuteTrajectory.Goal) -> TrajectoryGoalDTO:
+        """Construct a TrajectoryGoalDTO from an ExecuteTrajectory.Goal ROS2 message."""
+        return cls(paths=[TrajectoryPathDTO.from_ros_msg(p) for p in goal_msg.paths])

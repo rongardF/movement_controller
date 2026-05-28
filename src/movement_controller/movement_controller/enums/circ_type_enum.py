@@ -24,7 +24,17 @@
 # CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
 # ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 # POSSIBILITY OF SUCH DAMAGE.
+"""CircTypeEnum — CIRC arc reference type identifiers for trajectory paths."""
 
-from movement_controller.ur_movement_controller import URMovementController
+from enum import Enum
 
-__all__ = ['URMovementController']
+
+class CircTypeEnum(str, Enum):
+    """CIRC arc reference type constants.
+
+    INTERIM: the circ_point is a waypoint on the arc.
+    CENTER:  the circ_point is the center of the arc.
+    """
+
+    INTERIM = 'interim'
+    CENTER = 'center'

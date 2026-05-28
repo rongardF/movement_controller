@@ -25,4 +25,8 @@
 # ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 # POSSIBILITY OF SUCH DAMAGE.
 
-#FIXME: HUMAN REVIEW COMMENT: I think we should import the enums here and re-export them, so that users can import from movement_controller.enums instead of needing to know the submodules. It should also help to avoid import issues as we can ensure the import order is correct and that all enums are available when needed. WHat do you think?
+from movement_controller.enums.circ_type_enum import CircTypeEnum
+from movement_controller.enums.feedback_status_enum import FeedbackStatusEnum
+from movement_controller.enums.motion_type_enum import MotionTypeEnum
+
+__all__ = ['CircTypeEnum', 'FeedbackStatusEnum', 'MotionTypeEnum']

@@ -25,4 +25,7 @@
 # ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 # POSSIBILITY OF SUCH DAMAGE.
 
-#FIXME: HUMAN REVIEW COMMENT: I think w should export model classes here so that users can import from movement_controller.models instead of needing to know the submodules. It should also help to avoid import issues as we can ensure the import order is correct and that all models are available when needed. What do you think?
+from movement_controller.models.trajectory_path_dto import TrajectoryPathDTO
+from movement_controller.models.trajectory_goal_dto import TrajectoryGoalDTO
+
+__all__ = ['TrajectoryPathDTO', 'TrajectoryGoalDTO']

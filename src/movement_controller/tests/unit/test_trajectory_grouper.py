@@ -27,11 +27,26 @@
 """Unit tests for TrajectoryGrouper blend grouping algorithm."""
 
 import pytest
-from geometry_msgs.msg import Point, PoseStamped
+from geometry_msgs.msg import PoseStamped
 
 from movement_controller.enums.motion_type_enum import MotionTypeEnum
 from movement_controller.models.trajectory_path_dto import TrajectoryPathDTO
 from movement_controller.utils.trajectory_grouper import TrajectoryGrouper
+
+# Predefined valid UUID4 values for deterministic tests.
+_UUID_A = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'
+_UUID_B = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb'
+_UUID_C = 'cccccccc-cccc-4ccc-8ccc-cccccccccccc'
+_UUID_D = 'dddddddd-dddd-4ddd-8ddd-dddddddddddd'
+_UUIDT = [
+    '00000000-0000-4000-8000-000000000000',
+    '11111111-1111-4111-8111-111111111111',
+    '22222222-2222-4222-8222-222222222222',
+    '33333333-3333-4333-8333-333333333333',
+    '44444444-4444-4444-8444-444444444444',
+    '55555555-5555-4555-8555-555555555555',
+    '66666666-6666-4666-8666-666666666666',
+]
 
 
 def _p(path_id: str, blend_radius: float) -> TrajectoryPathDTO:
@@ -41,37 +56,34 @@ def _p(path_id: str, blend_radius: float) -> TrajectoryPathDTO:
         motion_type=MotionTypeEnum.LIN,
         target_pose=PoseStamped(),
         blend_radius=blend_radius,
-        circ_point=Point(),
     )
 
 
-def test_empty_paths_raises(): # FIXME: HUMAN REVIEW COMMENT: missing docstring on some of the test cases here
+def test_empty_paths_raises():
+    """group() raises ValueError when the input list is empty."""
     with pytest.raises(ValueError, match='must not be empty'):
         TrajectoryGrouper.group([])
 
 
-def test_duplicate_path_id_raises(): # FIXME: HUMAN REVIEW COMMENT: this should be validate in DTO
-    with pytest.raises(ValueError, match='Duplicate'):
-        TrajectoryGrouper.group([_p('a', 0.0), _p('a', 0.0)])
-
-
 def test_single_path_always_new_group():
-    groups = TrajectoryGrouper.group([_p('a', 0.5)])
+    """A single path always produces exactly one group."""
+    groups = TrajectoryGrouper.group([_p(_UUID_A, 0.5)])
     assert len(groups) == 1
     assert len(groups[0]) == 1
 
 
 def test_all_zero_blend_radius():
-    groups = TrajectoryGrouper.group([_p('a', 0.0), _p('b', 0.0), _p('c', 0.0)])
+    """Each zero-blend-radius path starts its own group."""
+    groups = TrajectoryGrouper.group([_p(_UUID_A, 0.0), _p(_UUID_B, 0.0), _p(_UUID_C, 0.0)])
     assert len(groups) == 3
 
 
 def test_mixed_grouping_d07_example():
     """Test the exact D-07 example: 7 paths → 4 groups with sizes [1, 1, 4, 1]."""
     paths = [
-        _p('t0', 0.5), _p('t1', 0.0), _p('t2', 0.0),
-        _p('t3', 0.3), _p('t4', 0.3), _p('t5', 0.3),
-        _p('t6', 0.0),
+        _p(_UUIDT[0], 0.5), _p(_UUIDT[1], 0.0), _p(_UUIDT[2], 0.0),
+        _p(_UUIDT[3], 0.3), _p(_UUIDT[4], 0.3), _p(_UUIDT[5], 0.3),
+        _p(_UUIDT[6], 0.0),
     ]
     groups = TrajectoryGrouper.group(paths)
     assert len(groups) == 4
@@ -81,9 +93,12 @@ def test_mixed_grouping_d07_example():
     assert len(groups[3]) == 1   # t6 (blend_radius=0 → new group)
 
 
-def test_all_positive_blend_radius_except_first():
-    """First path starts a group; subsequent paths with br>0 all merge into it."""
-    groups = TrajectoryGrouper.group([_p('a', 0.5), _p('b', 0.3), _p('c', 0.3)])
+def test_first_path_always_starts_new_group_even_with_positive_blend_radius():
+    """First path always starts a new group regardless of its blend_radius.
+
+    Subsequent paths with br>0 all merge into that group.
+    """
+    groups = TrajectoryGrouper.group([_p(_UUID_A, 0.5), _p(_UUID_B, 0.3), _p(_UUID_C, 0.3)])
     assert len(groups) == 1
     assert len(groups[0]) == 3
 
@@ -91,17 +106,17 @@ def test_all_positive_blend_radius_except_first():
 def test_two_separate_groups():
     """br=0 on 3rd path splits into two groups of two."""
     groups = TrajectoryGrouper.group(
-        [_p('a', 0.0), _p('b', 0.3), _p('c', 0.0), _p('d', 0.3)]
+        [_p(_UUID_A, 0.0), _p(_UUID_B, 0.3), _p(_UUID_C, 0.0), _p(_UUID_D, 0.3)]
     )
     assert len(groups) == 2
-    assert len(groups[0]) == 2   # a, b
-    assert len(groups[1]) == 2   # c, d
+    assert len(groups[0]) == 2   # A, B
+    assert len(groups[1]) == 2   # C, D
 
 
 def test_negative_blend_radius_treated_as_zero():
     """DTO normalises -0.5 → 0.0; first path starts group, second merges due to br>0."""
-    # After normalisation: a.blend_radius=0.0, b.blend_radius=0.3
-    # a is i=0 → new group; b is i=1 with br=0.3>0 → merges → [[a, b]]
-    groups = TrajectoryGrouper.group([_p('a', -0.5), _p('b', 0.3)])
+    # After normalisation: A.blend_radius=0.0, B.blend_radius=0.3
+    # A is i=0 → new group; B is i=1 with br=0.3>0 → merges → [[A, B]]
+    groups = TrajectoryGrouper.group([_p(_UUID_A, -0.5), _p(_UUID_B, 0.3)])
     assert len(groups) == 1
     assert len(groups[0]) == 2

@@ -1,7 +1,7 @@
 ---
 phase: 2
 depth: deep
-status: issues_found
+status: fixed
 files_reviewed: 11
 files_reviewed_list:
   - src/movement_controller/movement_controller/ur_movement_controller.py
@@ -20,6 +20,7 @@ findings:
   warning: 9
   info: 12
   total: 22
+fixed_at: 2026-05-28
 reviewed_at: 2026-05-27
 ---
 
@@ -27,7 +28,40 @@ reviewed_at: 2026-05-27
 
 ## Summary
 
-The phase delivers a well-structured skeleton: Pydantic v2 models are correctly configured, the `TrajectoryGrouper` algorithm is clean and correctly tested, and the error-handling boundary pattern (exceptions caught, converted to result objects, logged) is followed throughout. One critical concurrency defect exists in the `_is_executing` guard that will allow two goals to execute simultaneously once a `MultiThreadedExecutor` is added — which is required by project conventions for action servers using `ReentrantCallbackGroup`. Nine warnings cover deactivation safety, validation coupling, data model integrity gaps (`path_id` UUID4, `circ_type` enum), and split validation logic spread across three locations. Twelve info-level findings address type annotation gaps, API style, test mock quality, and missing `__init__.py` re-exports — many surfaced by FIXME annotations left in the source.
+The phase delivers a well-structured skeleton: Pydantic v2 models are correctly configured, the `TrajectoryGrouper` algorithm is clean and correctly tested, and the error-handling boundary pattern (exceptions caught, converted to result objects, logged) is followed throughout. One critical concurrency defect existed in the `_is_executing` guard that would allow two goals to execute simultaneously once a `MultiThreadedExecutor` is added — which is required by project conventions for action servers using `ReentrantCallbackGroup`. Nine warnings covered deactivation safety, validation coupling, data model integrity gaps (`path_id` UUID4, `circ_type` enum), and split validation logic spread across three locations. Twelve info-level findings addressed type annotation gaps, API style, test mock quality, and missing `__init__.py` re-exports.
+
+All 22 findings have been fixed. 36 unit tests pass.
+
+---
+
+## Fix Log
+
+All findings fixed in commit `fix(02): apply code review fixes — all 22 findings resolved`.
+
+| ID | Status | Fix summary |
+|----|--------|-------------|
+| CR-001 | ✅ Fixed | `_is_executing = True` set atomically inside lock in `_goal_callback`; removed from `_execute_callback` |
+| WR-001 | ✅ Fixed | `on_deactivate` sets `_is_active = False` and resets `_is_executing = False` under lock |
+| WR-002 | ✅ Fixed | Validation consolidated into `TrajectoryGoalDTO.from_ros_msg()` — enum coercion handled by Pydantic |
+| WR-003 | ✅ Fixed | `normalise_blend_radius` wraps `float()` in `try/except (TypeError, ValueError)` |
+| WR-004 | ✅ Fixed | `circ_point` uses `default_factory=Point` |
+| WR-005 | ✅ Fixed | `main()` uses `MultiThreadedExecutor` |
+| WR-006 | ✅ Fixed | Added `test_execute_callback_clears_is_executing_after_failure` test |
+| WR-007 | ✅ Fixed | `validate_path_id` enforces UUID4 regex; all test fixtures updated to valid UUID4 strings |
+| WR-008 | ✅ Fixed | Created `circ_type_enum.py`; `circ_type` field uses `CircTypeEnum`; `coerce_circ_type` validator handles empty-string ROS defaults |
+| WR-009 | ✅ Fixed | Validation consolidated into `TrajectoryGoalDTO`; `from_ros_msg` factory added; duplicate path_id check moved from `TrajectoryGrouper` to `TrajectoryGoalDTO.validate_paths`; controller uses single DTO validation call |
+| IN-001 | ✅ Fixed | `TYPE_CHECKING` block now contains `from movement_controller.msg import TrajectoryPath` (no longer dead) |
+| IN-002 | ✅ Fixed | All FIXME annotations removed from all source files |
+| IN-003 | ✅ Fixed | `_state_machine` access replaced with tracked `_is_active: bool` flag; tests updated accordingly |
+| IN-004 | ✅ Fixed | `from_ros_msg` annotated as `ros_msg: TrajectoryPath` via `TYPE_CHECKING` import |
+| IN-005 | ✅ Fixed | `TrajectoryGoalDTO` is now used in controller via `from_ros_msg`; duplicate-ID validation added |
+| IN-006 | ✅ Fixed | Renamed to `test_first_path_always_starts_new_group_even_with_positive_blend_radius` |
+| IN-007 | ✅ Fixed | `from threading import Lock`; `self._executing_lock: Lock = Lock()` |
+| IN-008 | ✅ Fixed | `action_server_name` parameter already has default `'movement_controller/execute_trajectory'` |
+| IN-009 | ✅ Fixed | All four `__init__.py` files now re-export public symbols with `__all__` |
+| IN-010 | ✅ Fixed | FIXME comments removed; mock helpers fully populate all fields |
+| IN-011 | ✅ Fixed | `@field_validator('paths', mode='after')` is now explicit |
+| IN-012 | ✅ Fixed | `from_ros_msg` passes raw `motion_type` string; Pydantic coerces to `MotionTypeEnum` and raises `ValidationError` on invalid values (explicit cast via `MotionTypeEnum(v)` was omitted because it raises `ValueError` outside Pydantic's wrapping) |
 
 ---
 

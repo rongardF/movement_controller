@@ -28,15 +28,22 @@
 
 from __future__ import annotations
 
+import re
 from typing import TYPE_CHECKING
 
 from geometry_msgs.msg import Point, PoseStamped
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
+from movement_controller.enums.circ_type_enum import CircTypeEnum
 from movement_controller.enums.motion_type_enum import MotionTypeEnum
 
-if TYPE_CHECKING: #FIXME: HUMAN REVIEW COMMENT: what is this for? What does it do?
-    pass
+if TYPE_CHECKING:
+    from movement_controller.msg import TrajectoryPath
+
+_UUID4_RE = re.compile(
+    r'^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+    re.IGNORECASE,
+)
 
 
 class TrajectoryPathDTO(BaseModel):
@@ -44,7 +51,7 @@ class TrajectoryPathDTO(BaseModel):
 
     model_config = ConfigDict(arbitrary_types_allowed=True, frozen=True)
 
-    path_id: str = Field(description='UUID4 path identifier, must be non-empty')  #FIXME: HUMAN REVIEW COMMENT: I think this should be UUID4 type imported from uuid module, rather than a string. It would ensure that the path_id is always a valid UUID4 and would make it clearer to users that this is the expected format
+    path_id: str = Field(description='UUID4 path identifier')
     motion_type: MotionTypeEnum = Field(description='Motion type: LIN, PTP, or CIRC')
     target_pose: PoseStamped = Field(description='Target end-effector pose with frame_id')
     blend_radius: float = Field(
@@ -63,32 +70,47 @@ class TrajectoryPathDTO(BaseModel):
         default='',
         description='Tool frame override; empty string means use tool0',
     )
-    circ_type: str = Field( #FIXME: HUMAN REVIEW COMMENT: I think we could use Enum for this as well, since it has a limited set of valid values (e.g. 'interim' or 'center'). It would provide stronger validation and make it clearer to users what the expected values are. What do you think?
-        default='',
-        description='CIRC arc point interpretation: interim or center',
+    circ_type: CircTypeEnum = Field(
+        default=CircTypeEnum.INTERIM,
+        description='CIRC arc reference type: interim (waypoint on arc) or center (arc center point)',
     )
     circ_point: Point = Field(
+        default_factory=Point,
         description='CIRC arc reference point; ignored for LIN/PTP',
     )
 
     @field_validator('path_id')
     @classmethod
     def validate_path_id(cls, v: str) -> str:
-        if not v: #FIXME: HUMAN REVIEW COMMENT: should we also validate that it's a valid UUID4 format? We could use the uuid module to attempt to parse it and ensure it's a valid UUID4, which would provide stronger validation than just checking for non-empty string. What do you think?
+        if not v:
             raise ValueError('path_id must be non-empty')
+        if not _UUID4_RE.match(v):
+            raise ValueError(f'path_id must be a valid UUID4, got {v!r}')
         return v
 
     @field_validator('blend_radius', mode='before')
     @classmethod
-    def normalise_blend_radius(cls, v: float) -> float:
-        return 0.0 if float(v) < 0 else float(v) #FIXME: HUMAN REVIEW COMMENT: we should account for failure where the value is not parsable to a float, to avoid unexpected exceptions. We could catch the exception and raise a ValueError with a clear message indicating that blend_radius must be a number. What do you think?
+    def normalise_blend_radius(cls, v: object) -> float:
+        try:
+            f = float(v)  # type: ignore[arg-type]
+        except (TypeError, ValueError):
+            raise ValueError(f'blend_radius must be a number, got {v!r}')
+        return 0.0 if f < 0 else f
+
+    @field_validator('circ_type', mode='before')
+    @classmethod
+    def coerce_circ_type(cls, v: object) -> object:
+        # ROS2 message string fields default to ''; treat empty as INTERIM.
+        if v == '' or v is None:
+            return CircTypeEnum.INTERIM.value
+        return v
 
     @classmethod
-    def from_ros_msg(cls, ros_msg) -> 'TrajectoryPathDTO':
+    def from_ros_msg(cls, ros_msg: TrajectoryPath) -> TrajectoryPathDTO:
         """Construct a TrajectoryPathDTO from a TrajectoryPath ROS2 message."""
         return cls(
-            path_id=ros_msg.path_id, 
-            motion_type=ros_msg.motion_type, #FIXME: HUMAN REVIEW COMMENT: should we not cast it to enum here?
+            path_id=ros_msg.path_id,
+            motion_type=ros_msg.motion_type,
             target_pose=ros_msg.target_pose,
             blend_radius=ros_msg.blend_radius,
             cartesian_speed=ros_msg.cartesian_speed,

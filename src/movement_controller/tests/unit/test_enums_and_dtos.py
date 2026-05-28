@@ -150,3 +150,63 @@ def test_trajectory_goal_dto_duplicate_path_ids():
     path2 = _make_path(path_id=_UUID_A)
     with pytest.raises(ValidationError, match='duplicate path_id'):
         TrajectoryGoalDTO(paths=[path1, path2])
+
+
+# ---------------------------------------------------------------------------
+# from_ros_msg — CIRC circ_type validation (Plan 03-03)
+# ---------------------------------------------------------------------------
+
+def _make_ros_path_msg(
+    path_id=_UUID_A,
+    motion_type='LIN',
+    circ_type='',
+):
+    """Build a minimal mock TrajectoryPath ROS message for from_ros_msg tests."""
+    from unittest.mock import MagicMock
+    from geometry_msgs.msg import Point, PoseStamped
+    msg = MagicMock()
+    msg.path_id = path_id
+    msg.motion_type = motion_type
+    msg.circ_type = circ_type
+    msg.target_pose = PoseStamped()
+    msg.blend_radius = 0.0
+    msg.cartesian_speed = 0.0
+    msg.acceleration = 0.0
+    msg.tool_frame = ''
+    msg.circ_point = Point()
+    return msg
+
+
+def test_from_ros_msg_circ_empty_circ_type_raises():
+    """CIRC path with circ_type='' raises ValueError with path_id in the message."""
+    msg = _make_ros_path_msg(motion_type='CIRC', circ_type='')
+    with pytest.raises(ValueError, match='circ_type is empty'):
+        TrajectoryPathDTO.from_ros_msg(msg)
+
+
+def test_from_ros_msg_circ_invalid_circ_type_raises():
+    """CIRC path with unrecognised circ_type raises ValueError."""
+    msg = _make_ros_path_msg(motion_type='CIRC', circ_type='unknown')
+    with pytest.raises(ValueError, match='invalid circ_type'):
+        TrajectoryPathDTO.from_ros_msg(msg)
+
+
+def test_from_ros_msg_circ_valid_interim():
+    """CIRC path with circ_type='interim' converts successfully."""
+    msg = _make_ros_path_msg(motion_type='CIRC', circ_type='interim')
+    dto = TrajectoryPathDTO.from_ros_msg(msg)
+    assert dto.circ_type == CircTypeEnum.INTERIM
+
+
+def test_from_ros_msg_circ_valid_center():
+    """CIRC path with circ_type='center' converts successfully."""
+    msg = _make_ros_path_msg(motion_type='CIRC', circ_type='center')
+    dto = TrajectoryPathDTO.from_ros_msg(msg)
+    assert dto.circ_type == CircTypeEnum.CENTER
+
+
+def test_from_ros_msg_non_circ_empty_circ_type_defaults_to_interim():
+    """LIN path with circ_type='' still defaults to CircTypeEnum.INTERIM (non-CIRC unaffected)."""
+    msg = _make_ros_path_msg(motion_type='LIN', circ_type='')
+    dto = TrajectoryPathDTO.from_ros_msg(msg)
+    assert dto.circ_type == CircTypeEnum.INTERIM

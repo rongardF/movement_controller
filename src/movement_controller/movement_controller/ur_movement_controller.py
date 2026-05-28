@@ -170,24 +170,50 @@ class URMovementController(LifecycleNode):
         try:
             goal_dto = TrajectoryGoalDTO.from_ros_msg(goal_handle.request)
             groups = TrajectoryGrouper.group(goal_dto.paths)
+            completed_ids: list[str] = []
 
             for group in groups:
-                path_ids = [p.path_id for p in group]
+                for path in group:
+                    # Publish executing feedback per-path (D-15)
+                    fb = ExecuteTrajectory.Feedback()
+                    fb.status = FeedbackStatusEnum.EXECUTING.value
+                    fb.trajectory_path_ids = [path.path_id]
+                    goal_handle.publish_feedback(fb)
 
-                fb = ExecuteTrajectory.Feedback()
-                fb.status = FeedbackStatusEnum.EXECUTING.value
-                fb.trajectory_path_ids = path_ids
-                goal_handle.publish_feedback(fb)
+                    # Plan via PILZ — fail-fast on planning failure (D-16)
+                    plan_result = self._planner_service.plan(path)
+                    if not plan_result.success:
+                        self.get_logger().error(
+                            f'Planning failed for path {path.path_id!r}: {plan_result.error_message}'
+                        )
+                        result = ExecuteTrajectory.Result()
+                        result.success = False
+                        result.error_message = plan_result.error_message
+                        goal_handle.abort()
+                        return result
 
-                fb2 = ExecuteTrajectory.Feedback()
-                fb2.status = FeedbackStatusEnum.COMPLETED.value
-                fb2.trajectory_path_ids = path_ids
-                goal_handle.publish_feedback(fb2)
+                    # Execute trajectory — NO blocking kwarg (Research Pitfall 4)
+                    exec_status = self._moveit.execute(plan_result.trajectory, controllers=[])
+                    if not exec_status:
+                        err = f'Execution failed for path {path.path_id!r}'
+                        self.get_logger().error(err)
+                        result = ExecuteTrajectory.Result()
+                        result.success = False
+                        result.error_message = err
+                        goal_handle.abort()
+                        return result
+
+                    # Publish completed feedback per-path (D-15)
+                    fb2 = ExecuteTrajectory.Feedback()
+                    fb2.status = FeedbackStatusEnum.COMPLETED.value
+                    fb2.trajectory_path_ids = [path.path_id]
+                    goal_handle.publish_feedback(fb2)
+                    completed_ids.append(path.path_id)
 
             result = ExecuteTrajectory.Result()
             result.success = True
             result.error_message = ''
-            result.trajectory_paths_completed = [p.path_id for p in goal_dto.paths]
+            result.trajectory_paths_completed = completed_ids
             goal_handle.succeed()
             return result
 

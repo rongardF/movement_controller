@@ -147,7 +147,17 @@ def _make_path_msg(path_id: str, blend_radius: float = 0.0) -> MagicMock:
 
 
 def test_execute_callback_stub_feedback_sequence(node):
-    """Two paths (br=0.0 each) → 2 groups → 4 feedback messages."""
+    """Two paths (br=0.0 each) → 2 groups → 4 feedback messages (executing+completed per path)."""
+    mock_plan_result = MagicMock()
+    mock_plan_result.success = True
+    mock_plan_result.trajectory = MagicMock()
+    node._planner_service = MagicMock()
+    node._planner_service.plan.return_value = mock_plan_result
+    mock_exec_status = MagicMock()
+    mock_exec_status.__bool__ = MagicMock(return_value=True)
+    node._moveit = MagicMock()
+    node._moveit.execute.return_value = mock_exec_status
+
     mock_goal_handle = MagicMock()
     mock_goal_handle.request.paths = [
         _make_path_msg(_UUID1, 0.0),
@@ -158,6 +168,9 @@ def test_execute_callback_stub_feedback_sequence(node):
 
     result = asyncio.run(node._execute_callback(mock_goal_handle))
 
+    node._planner_service = None
+    node._moveit = None
+
     assert result.success is True
     assert mock_goal_handle.publish_feedback.call_count == 4
     assert result.trajectory_paths_completed == [_UUID1, _UUID2]
@@ -166,6 +179,16 @@ def test_execute_callback_stub_feedback_sequence(node):
 
 def test_execute_callback_clears_is_executing_after_success(node):
     """_is_executing must be False after a successful callback run."""
+    mock_plan_result = MagicMock()
+    mock_plan_result.success = True
+    mock_plan_result.trajectory = MagicMock()
+    node._planner_service = MagicMock()
+    node._planner_service.plan.return_value = mock_plan_result
+    mock_exec_status = MagicMock()
+    mock_exec_status.__bool__ = MagicMock(return_value=True)
+    node._moveit = MagicMock()
+    node._moveit.execute.return_value = mock_exec_status
+
     node._is_executing = True  # simulate _goal_callback having set it
     mock_goal_handle = MagicMock()
     mock_goal_handle.request.paths = [_make_path_msg(_UUID1, 0.0)]
@@ -174,19 +197,32 @@ def test_execute_callback_clears_is_executing_after_success(node):
 
     asyncio.run(node._execute_callback(mock_goal_handle))
 
+    node._planner_service = None
+    node._moveit = None
+
     assert node._is_executing is False
 
 
 def test_execute_callback_clears_is_executing_after_failure(node):
-    """_is_executing must be False even when execution raises an exception."""
+    """_is_executing must be False even when planning fails."""
+    failing_plan = MagicMock()
+    failing_plan.success = False
+    failing_plan.error_message = 'planning failed'
+    node._planner_service = MagicMock()
+    node._planner_service.plan.return_value = failing_plan
+    node._moveit = MagicMock()
+
     node._is_executing = True  # simulate _goal_callback having set it
     mock_goal_handle = MagicMock()
     mock_goal_handle.request.paths = [_make_path_msg(_UUID1, 0.0)]
     mock_goal_handle.publish_feedback = MagicMock()
-    mock_goal_handle.succeed.side_effect = RuntimeError('simulated failure')
+    mock_goal_handle.succeed = MagicMock()
     mock_goal_handle.abort = MagicMock()
 
     result = asyncio.run(node._execute_callback(mock_goal_handle))
+
+    node._planner_service = None
+    node._moveit = None
 
     assert node._is_executing is False
     assert result.success is False

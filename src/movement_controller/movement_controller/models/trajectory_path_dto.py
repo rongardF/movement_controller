@@ -105,14 +105,22 @@ class TrajectoryPathDTO(BaseModel):
             motion_type = MotionTypeEnum(ros_msg.motion_type)
         except ValueError:
             raise ValueError(f'Invalid motion_type: {ros_msg.motion_type!r}')
-        
-        try:
-            if ros_msg.circ_type == '' or ros_msg.circ_type is None:
-                circ_type = CircTypeEnum.INTERIM
-            else:   
+
+        if motion_type == MotionTypeEnum.CIRC:
+            if not ros_msg.circ_type:
+                raise ValueError(
+                    f'path {ros_msg.path_id!r} has motion_type CIRC but circ_type is empty; '
+                    f'must be "interim" or "center"'
+                )
+            try:
                 circ_type = CircTypeEnum(ros_msg.circ_type)
-        except ValueError:
-            raise ValueError(f'Invalid circ_type: {ros_msg.circ_type!r}')
+            except ValueError:
+                raise ValueError(
+                    f'path {ros_msg.path_id!r} has motion_type CIRC but invalid circ_type '
+                    f'{ros_msg.circ_type!r}; must be "interim" or "center"'
+                )
+        else:
+            circ_type = CircTypeEnum(ros_msg.circ_type) if ros_msg.circ_type else CircTypeEnum.INTERIM
 
         return cls(
             path_id=ros_msg.path_id,

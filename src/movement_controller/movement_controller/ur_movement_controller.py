@@ -175,7 +175,7 @@ class URMovementController(LifecycleNode):
                 result = ExecuteTrajectory.Result()
                 result.success = False
                 result.error_message = err
-                try:
+                try:  # FIXME: this logic gets repeated a lot , consider refactoring into a helper method
                     goal_handle.abort()
                 except Exception:
                     pass  # already in terminal state (client cancelled concurrently)

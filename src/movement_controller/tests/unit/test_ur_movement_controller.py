@@ -158,6 +158,7 @@ def test_execute_callback_stub_feedback_sequence(node):
     node._moveit = MagicMock()
     node._moveit.execute.return_value = mock_exec_status
 
+    node._is_active = True
     mock_goal_handle = MagicMock()
     mock_goal_handle.request.paths = [
         _make_path_msg(_UUID1, 0.0),

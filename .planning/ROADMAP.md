@@ -76,12 +76,13 @@ Plans:
 
 **Covers:** MOT-02, MOT-03, MOT-04
 
-### Plans
+**Plans:** 4 plans
 
-1. **MoveGroupSequence integration** — Replace single-path `execute()` call with `MoveGroupSequence` action for blended trajectory; configure blend radius per path segment from goal
-2. **Look-ahead thread** — Implement background planning thread: as path N executes, plan remaining paths and store in a thread-safe queue; handle cancellation cleanly
-3. **Queue-driven execution loop** — Execution loop dequeues pre-planned paths and submits them immediately; falls back to inline planning if look-ahead missed
-4. **Multi-path integration test** — Test with 3-path trajectory; assert look-ahead was used (path N+1 already planned before N finishes); assert blend radius is passed through
+Plans:
+- [ ] 04-01-PLAN.md — Foundation: PlanResultDTO extension (path_ids, blended, trajectories); PilzPlannerService constructor + node param + GetMotionSequence client; URMovementController on_configure update
+- [ ] 04-02-PLAN.md — Look-ahead thread: plan_all, _planning_loop, _plan_group_sequence (MotionSequenceRequest), iterate_planned_trajectories generator, cancel (D-03 through D-09)
+- [ ] 04-03-PLAN.md — Controller wiring: _execute_callback generator loop with group-level feedback and TEM execution; _cancel_callback; ActionServer cancel_callback wiring (D-01, D-02, D-10)
+- [ ] 04-04-PLAN.md — Tests: unit tests for plan_all/iterate/cancel (mock service client); updated integration tests for Phase 4 API; 3-path blended scenario; cancel scenario
 
 **Success criteria:**
 - 3-path blended trajectory executes with no stop between segments in simulation

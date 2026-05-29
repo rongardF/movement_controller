@@ -90,12 +90,22 @@ class URMovementController(LifecycleNode):
 
         try:
             self._moveit = MoveItPy(node_name='moveit_py_node')
-            self._planner_service = PilzPlannerService(self._moveit, moveit_group_name)
+            self._planner_service = PilzPlannerService(self._moveit, moveit_group_name, node=self)
         except Exception as e:
             self.get_logger().error(f'MoveItPy initialisation failed: {e}')
             if self._moveit is not None:
                 self._moveit.shutdown()
                 self._moveit = None
+            return TransitionCallbackReturn.FAILURE
+
+        if not self._planner_service.wait_for_service(timeout_sec=timeout):
+            self.get_logger().error(
+                f'/plan_sequence_path service not available after {timeout}s — '
+                'is move_group launched with pilz_industrial_motion_planner/MoveGroupSequenceService capability?'
+            )
+            self._moveit.shutdown()
+            self._moveit = None
+            self._planner_service = None
             return TransitionCallbackReturn.FAILURE
 
         self.get_logger().info(f'MoveItPy connected - planning group: {moveit_group_name}')

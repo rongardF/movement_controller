@@ -54,3 +54,15 @@ class PlanResultDTO(BaseModel):
         default='',
         description='Human-readable error; empty on success',
     )
+    trajectories: list[Any] = Field(
+        default_factory=list,
+        description='list of moveit_msgs/RobotTrajectory for each segment in this group; empty in single-path plan() results',
+    )
+    path_ids: list[str] = Field(
+        default_factory=list,
+        description='path IDs this result covers, in execution order; populated by plan_all(), empty in plan() results',
+    )
+    blended: bool = Field(
+        default=False,
+        description='True if this group has more than one path (blend group); False for size-1 groups',
+    )

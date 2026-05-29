@@ -28,8 +28,13 @@
 
 from __future__ import annotations
 
+import queue
+import threading
+import time
+
 from moveit.planning import MoveItPy, PlanRequestParameters, PlanningComponent
 from moveit_msgs.msg import BoundingVolume, Constraints, PositionConstraint
+from moveit_msgs.srv import GetMotionSequence
 from shape_msgs.msg import SolidPrimitive
 from geometry_msgs.msg import Pose
 
@@ -45,9 +50,19 @@ class PilzPlannerService:
     injection. The owning controller manages the MoveItPy lifecycle.
     """
 
-    def __init__(self, moveit: MoveItPy, moveit_group_name: str) -> None:
+    def __init__(self, moveit: MoveItPy, moveit_group_name: str, node) -> None:
         self._moveit = moveit
+        self._group_name = moveit_group_name
+        self._node = node
         self._planning_component: PlanningComponent = self._moveit.get_planning_component(moveit_group_name)
+        self._plan_seq_client = node.create_client(GetMotionSequence, '/plan_sequence_path')
+        self._plan_queue: queue.Queue | None = None
+        self._cancel_event: threading.Event | None = None
+        self._planning_thread: threading.Thread | None = None
+
+    def wait_for_service(self, timeout_sec: float) -> bool:
+        """Return True if /plan_sequence_path is available within timeout_sec."""
+        return self._plan_seq_client.wait_for_service(timeout_sec=timeout_sec)
 
     def plan(self, path_dto: TrajectoryPathDTO) -> PlanResultDTO:
         """Plan a single trajectory path using the PILZ industrial motion planner.

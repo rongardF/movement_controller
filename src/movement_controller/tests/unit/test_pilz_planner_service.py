@@ -73,7 +73,14 @@ def mock_moveit():
 
 
 @pytest.fixture
-def service(mock_moveit, mock_planning_component):
+def mock_node():
+    n = MagicMock()
+    n.create_client.return_value = MagicMock()
+    return n
+
+
+@pytest.fixture
+def service(mock_moveit, mock_planning_component, mock_node):
     """PilzPlannerService with injected mocks.
 
     Wires mock_moveit.get_planning_component to return mock_planning_component so
@@ -81,7 +88,7 @@ def service(mock_moveit, mock_planning_component):
     that now calls get_planning_component(group_name) internally.
     """
     mock_moveit.get_planning_component.return_value = mock_planning_component
-    return PilzPlannerService(mock_moveit, 'ur_manipulator')
+    return PilzPlannerService(mock_moveit, 'ur_manipulator', mock_node)
 
 
 @pytest.fixture(autouse=True)

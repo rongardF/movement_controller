@@ -31,7 +31,7 @@ from threading import Lock
 import rclpy
 from pydantic import ValidationError
 from rcl_interfaces.msg import ParameterDescriptor
-from rclpy.action import ActionServer, GoalResponse
+from rclpy.action import ActionServer, CancelResponse, GoalResponse
 from rclpy.action.server import ServerGoalHandle
 from rclpy.callback_groups import ReentrantCallbackGroup
 from rclpy.executors import MultiThreadedExecutor
@@ -39,6 +39,7 @@ from rclpy.lifecycle import LifecycleNode
 from rclpy.lifecycle.node import LifecycleState, TransitionCallbackReturn
 
 from moveit.planning import MoveItPy
+from moveit.core.robot_trajectory import RobotTrajectory
 from moveit_msgs.srv import GetPlanningScene
 
 from movement_controller.action import ExecuteTrajectory
@@ -116,6 +117,7 @@ class URMovementController(LifecycleNode):
             "movement_controller/execute_trajectory",
             execute_callback=self._execute_callback,
             goal_callback=self._goal_callback,
+            cancel_callback=self._cancel_callback,
             callback_group=ReentrantCallbackGroup(),
         )
         self.get_logger().info(f'Action server created at: movement_controller/execute_trajectory')
@@ -185,66 +187,99 @@ class URMovementController(LifecycleNode):
                 result = ExecuteTrajectory.Result()
                 result.success = False
                 result.error_message = err
-                try:  # FIXME: this logic gets repeated a lot , consider refactoring into a helper method
+                try:
                     goal_handle.abort()
                 except Exception:
                     pass  # already in terminal state (client cancelled concurrently)
                 return result
 
-            for group in groups:
-                for path in group:
-                    if not self._is_active:
-                        self.get_logger().warn('Execution halted: node deactivated mid-trajectory')
-                        result = ExecuteTrajectory.Result()
-                        result.success = False
-                        result.error_message = 'Node deactivated during execution'
-                        try:
-                            goal_handle.abort()
-                        except Exception:
-                            pass  # already in terminal state (client cancelled concurrently)
-                        return result
+            # Acquire TEM and robot model once before the generator loop
+            robot_model = self._moveit.get_robot_model()
+            tem = self._moveit.get_trajectory_execution_manager()
 
-                    # Publish executing feedback per-path (D-15)
-                    fb = ExecuteTrajectory.Feedback()
-                    fb.status = FeedbackStatusEnum.EXECUTING.value
-                    fb.trajectory_path_ids = [path.path_id]
-                    goal_handle.publish_feedback(fb)
+            # Start look-ahead background planning thread (D-04)
+            self._planner_service.plan_all(groups)
 
-                    # Plan via PILZ — fail-fast on planning failure (D-16)
-                    plan_result = self._planner_service.plan(path)
-                    if not plan_result.success:
-                        self.get_logger().error(
-                            f'Planning failed for path {path.path_id!r}: {plan_result.error_message}'
-                        )
-                        result = ExecuteTrajectory.Result()
-                        result.success = False
-                        result.error_message = plan_result.error_message
-                        try:
-                            goal_handle.abort()
-                        except Exception:
-                            pass  # already in terminal state (client cancelled concurrently)
-                        return result
+            # Generator loop — one iteration per planned group (D-05)
+            for plan_dto in self._planner_service.iterate_planned_trajectories():
 
-                    # Execute trajectory — NO blocking kwarg (Research Pitfall 4)
-                    exec_status = self._moveit.execute(plan_result.trajectory, controllers=[])
-                    if not exec_status:
-                        err = f'Execution failed for path {path.path_id!r}'
-                        self.get_logger().error(err)
-                        result = ExecuteTrajectory.Result()
-                        result.success = False
-                        result.error_message = err
-                        try:
-                            goal_handle.abort()
-                        except Exception:
-                            pass  # already in terminal state (client cancelled concurrently)
-                        return result
+                # a. Cancel check (before executing anything in this group)
+                if goal_handle.is_cancel_requested:
+                    self._planner_service.cancel()  # idempotent; may already have been called
+                    result = ExecuteTrajectory.Result()
+                    result.success = False
+                    result.error_message = 'Goal was canceled'
+                    result.trajectory_paths_completed = completed_ids  # D-02: partial list
+                    try:
+                        goal_handle.canceled()
+                    except Exception:
+                        pass
+                    return result
 
-                    # Publish completed feedback per-path (D-15)
-                    fb2 = ExecuteTrajectory.Feedback()
-                    fb2.status = FeedbackStatusEnum.COMPLETED.value
-                    fb2.trajectory_path_ids = [path.path_id]
-                    goal_handle.publish_feedback(fb2)
-                    completed_ids.append(path.path_id)
+                # b. Active-state check
+                if not self._is_active:
+                    self.get_logger().warn('Execution halted: node deactivated mid-trajectory')
+                    result = ExecuteTrajectory.Result()
+                    result.success = False
+                    result.error_message = 'Node deactivated during execution'
+                    result.trajectory_paths_completed = completed_ids
+                    try:
+                        goal_handle.abort()
+                    except Exception:
+                        pass
+                    return result
+
+                # c. Planning failure check
+                if not plan_dto.success:
+                    self.get_logger().error(f'Look-ahead planning failed: {plan_dto.error_message}')
+                    result = ExecuteTrajectory.Result()
+                    result.success = False
+                    result.error_message = plan_dto.error_message
+                    result.trajectory_paths_completed = completed_ids  # D-02: partial list
+                    try:
+                        goal_handle.abort()
+                    except Exception:
+                        pass
+                    return result
+
+                # d. Publish group-level 'executing' feedback (D-01)
+                fb = ExecuteTrajectory.Feedback()
+                fb.status = FeedbackStatusEnum.EXECUTING.value
+                fb.trajectory_path_ids = plan_dto.path_ids
+                goal_handle.publish_feedback(fb)
+
+                # e. Get reference robot state for trajectory conversion
+                with self._moveit.get_planning_scene_monitor().read_only() as scene:
+                    ref_state = scene.current_state
+
+                # f. Execute all segments in this group via TEM
+                for ros_traj_msg in plan_dto.trajectories:
+                    traj = RobotTrajectory(robot_model)
+                    traj.set_robot_trajectory_msg(ref_state, ros_traj_msg)
+                    tem.push(traj)
+                try:
+                    tem.execute_and_wait()
+                except Exception as exec_err:
+                    err_msg = f'TEM execution failed for paths {plan_dto.path_ids}: {exec_err}'
+                    self.get_logger().error(err_msg)
+                    result = ExecuteTrajectory.Result()
+                    result.success = False
+                    result.error_message = err_msg
+                    result.trajectory_paths_completed = completed_ids
+                    try:
+                        goal_handle.abort()
+                    except Exception:
+                        pass
+                    return result
+
+                # g. Publish group-level 'completed' feedback (D-01)
+                fb2 = ExecuteTrajectory.Feedback()
+                fb2.status = FeedbackStatusEnum.COMPLETED.value
+                fb2.trajectory_path_ids = plan_dto.path_ids
+                goal_handle.publish_feedback(fb2)
+
+                # h. Track completed IDs (D-02)
+                completed_ids.extend(plan_dto.path_ids)
 
             result = ExecuteTrajectory.Result()
             result.success = True
@@ -267,6 +302,17 @@ class URMovementController(LifecycleNode):
         finally:
             with self._executing_lock:
                 self._is_executing = False
+
+    def _cancel_callback(self, cancel_request) -> CancelResponse:
+        """Non-blocking cancel: signal planner to stop and return ACCEPT immediately (D-10).
+
+        Does NOT join the planning thread. Does NOT call moveit.stop().
+        The background thread terminates when it next checks cancel_event.
+        The iterate_planned_trajectories() generator terminates via the StopIteration sentinel.
+        """
+        if self._planner_service is not None:
+            self._planner_service.cancel()
+        return CancelResponse.ACCEPT
 
     # endregion: action server callbacks
 

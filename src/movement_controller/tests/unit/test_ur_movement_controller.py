@@ -27,13 +27,14 @@
 """Unit tests for URMovementController lifecycle and action server callbacks."""
 
 import asyncio
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 import pytest
 import rclpy
 from geometry_msgs.msg import Point, PoseStamped
 from rclpy.action import GoalResponse
 
+from movement_controller.models.plan_result_dto import PlanResultDTO
 from movement_controller.ur_movement_controller import URMovementController
 
 # Predefined valid UUID4 values for deterministic tests.
@@ -146,20 +147,41 @@ def _make_path_msg(path_id: str, blend_radius: float = 0.0) -> MagicMock:
     return m
 
 
+def _make_mock_moveit_with_tem():
+    """Build a mock MoveItPy with all TEM and scene monitor hooks Phase 4 needs."""
+    mock_moveit = MagicMock()
+    mock_tem = MagicMock()
+    mock_tem.push = MagicMock()
+    mock_tem.execute_and_wait = MagicMock(return_value=None)
+    mock_moveit.get_trajectory_execution_manager.return_value = mock_tem
+    mock_moveit.get_robot_model.return_value = MagicMock()
+    mock_scene_ctx = MagicMock()
+    mock_scene_ctx.__enter__ = MagicMock(return_value=MagicMock(current_state=MagicMock()))
+    mock_scene_ctx.__exit__ = MagicMock(return_value=False)
+    mock_moveit.get_planning_scene_monitor.return_value.read_only.return_value = mock_scene_ctx
+    return mock_moveit
+
+
+def _make_mock_planner_with_results(plan_results: list):
+    """Build a mock PilzPlannerService that yields the given PlanResultDTOs."""
+    mock_planner = MagicMock()
+    mock_planner.plan_all = MagicMock()
+    mock_planner.cancel = MagicMock()
+    mock_planner.iterate_planned_trajectories = MagicMock(return_value=iter(plan_results))
+    return mock_planner
+
+
 def test_execute_callback_stub_feedback_sequence(node):
-    """Two paths (br=0.0 each) → 2 groups → 4 feedback messages (executing+completed per path)."""
-    mock_plan_result = MagicMock()
-    mock_plan_result.success = True
-    mock_plan_result.trajectory = MagicMock()
-    node._planner_service = MagicMock()
-    node._planner_service.plan.return_value = mock_plan_result
-    mock_exec_status = MagicMock()
-    mock_exec_status.__bool__ = MagicMock(return_value=True)
-    node._moveit = MagicMock()
-    node._moveit.execute.return_value = mock_exec_status
+    """Two paths (br=0.0 each) → 2 groups → 4 feedback messages (executing+completed per group)."""
+    dto1 = PlanResultDTO(success=True, path_ids=[_UUID1], blended=False, trajectories=[MagicMock()])
+    dto2 = PlanResultDTO(success=True, path_ids=[_UUID2], blended=False, trajectories=[MagicMock()])
+
+    node._planner_service = _make_mock_planner_with_results([dto1, dto2])
+    node._moveit = _make_mock_moveit_with_tem()
 
     node._is_active = True
     mock_goal_handle = MagicMock()
+    mock_goal_handle.is_cancel_requested = False
     mock_goal_handle.request.paths = [
         _make_path_msg(_UUID1, 0.0),
         _make_path_msg(_UUID2, 0.0),
@@ -167,7 +189,9 @@ def test_execute_callback_stub_feedback_sequence(node):
     mock_goal_handle.publish_feedback = MagicMock()
     mock_goal_handle.succeed = MagicMock()
 
-    result = asyncio.run(node._execute_callback(mock_goal_handle))
+    with patch('movement_controller.ur_movement_controller.RobotTrajectory') as mock_rt:
+        mock_rt.return_value = MagicMock()
+        result = asyncio.run(node._execute_callback(mock_goal_handle))
 
     node._planner_service = None
     node._moveit = None
@@ -180,23 +204,21 @@ def test_execute_callback_stub_feedback_sequence(node):
 
 def test_execute_callback_clears_is_executing_after_success(node):
     """_is_executing must be False after a successful callback run."""
-    mock_plan_result = MagicMock()
-    mock_plan_result.success = True
-    mock_plan_result.trajectory = MagicMock()
-    node._planner_service = MagicMock()
-    node._planner_service.plan.return_value = mock_plan_result
-    mock_exec_status = MagicMock()
-    mock_exec_status.__bool__ = MagicMock(return_value=True)
-    node._moveit = MagicMock()
-    node._moveit.execute.return_value = mock_exec_status
+    dto = PlanResultDTO(success=True, path_ids=[_UUID1], blended=False, trajectories=[MagicMock()])
+    node._planner_service = _make_mock_planner_with_results([dto])
+    node._moveit = _make_mock_moveit_with_tem()
 
+    node._is_active = True
     node._is_executing = True  # simulate _goal_callback having set it
     mock_goal_handle = MagicMock()
+    mock_goal_handle.is_cancel_requested = False
     mock_goal_handle.request.paths = [_make_path_msg(_UUID1, 0.0)]
     mock_goal_handle.publish_feedback = MagicMock()
     mock_goal_handle.succeed = MagicMock()
 
-    asyncio.run(node._execute_callback(mock_goal_handle))
+    with patch('movement_controller.ur_movement_controller.RobotTrajectory') as mock_rt:
+        mock_rt.return_value = MagicMock()
+        asyncio.run(node._execute_callback(mock_goal_handle))
 
     node._planner_service = None
     node._moveit = None
@@ -206,21 +228,22 @@ def test_execute_callback_clears_is_executing_after_success(node):
 
 def test_execute_callback_clears_is_executing_after_failure(node):
     """_is_executing must be False even when planning fails."""
-    failing_plan = MagicMock()
-    failing_plan.success = False
-    failing_plan.error_message = 'planning failed'
-    node._planner_service = MagicMock()
-    node._planner_service.plan.return_value = failing_plan
-    node._moveit = MagicMock()
+    dto = PlanResultDTO(success=False, path_ids=[_UUID1], error_message='planning failed')
+    node._planner_service = _make_mock_planner_with_results([dto])
+    node._moveit = _make_mock_moveit_with_tem()
 
+    node._is_active = True
     node._is_executing = True  # simulate _goal_callback having set it
     mock_goal_handle = MagicMock()
+    mock_goal_handle.is_cancel_requested = False
     mock_goal_handle.request.paths = [_make_path_msg(_UUID1, 0.0)]
     mock_goal_handle.publish_feedback = MagicMock()
     mock_goal_handle.succeed = MagicMock()
     mock_goal_handle.abort = MagicMock()
 
-    result = asyncio.run(node._execute_callback(mock_goal_handle))
+    with patch('movement_controller.ur_movement_controller.RobotTrajectory') as mock_rt:
+        mock_rt.return_value = MagicMock()
+        result = asyncio.run(node._execute_callback(mock_goal_handle))
 
     node._planner_service = None
     node._moveit = None

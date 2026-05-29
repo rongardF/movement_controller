@@ -84,7 +84,7 @@ constraint overrides in this phase.
   2. Thread-safely drains (clears) the queue.
   3. Pushes a `StopIteration` sentinel into the queue so
      `iterate_planned_trajectories()` terminates cleanly.
-  Inside the background thread, after each group is planned and pushed to the
+  Inside the background thread, after each group is planned and before pushed to the
   queue, the thread checks the cancellation event — if set, the thread shuts
   down without planning further groups.
 - **D-10:** The ROS2 `ActionServer` is configured with a `cancel_callback`.
@@ -159,9 +159,9 @@ constraint overrides in this phase.
   construction in `on_configure`.
 - `movement_controller/services/pilz_planner_service.py` — `PilzPlannerService`
   with `plan(path_dto) → PlanResultDTO`. Phase 4 adds `plan_all()`,
-  `iterate_planned_trajectories()`, and `cancel()` alongside the existing
-  `plan()`. `plan()` may remain for compatibility with unit tests from Phase 3
-  or can be removed if the test strategy changes — researcher/planner decides.
+  `iterate_planned_trajectories()`, and `cancel()` to replace the existing
+  `plan()`. `plan()` together with unit tests from Phase 3
+  should be removed if the test strategy changes — researcher/planner decides.
 - `movement_controller/utils/trajectory_grouper.py` — `TrajectoryGrouper.group()`
   is unchanged. The controller still calls it to produce groups before passing
   them to `plan_all()`.
@@ -173,7 +173,8 @@ constraint overrides in this phase.
 - **Fail-fast on planning failure (D-16 from Phase 3):** If planning a group
   fails, the background thread should push a failed `PlanResultDTO` (with
   `success=False`) to the queue so the controller's generator loop can detect
-  it and abort the goal immediately.
+  it and abort the goal immediately. The backgroudn thread should then also
+  push the 'StopIteration' sentinel and shutdown (no further planning).
 - **Lock pattern for single-goal enforcement:** `_executing_lock` and
   `_is_executing` in `URMovementController` are unchanged — one goal at a time
   remains enforced at `_goal_callback`.

@@ -829,7 +829,7 @@ def mock_plan_seq_client(mocker):
 
 ---
 
-## Open Questions
+## Open Questions (ACCEPTED RISK — proceeding with TEM)
 
 1. **Does `TrajectoryExecutionManager.push()` + `execute_and_wait()` produce seamless blended motion with `fake_hardware_interface`?**
    - What we know: PILZ blended trajectories have non-zero velocity at segment boundaries

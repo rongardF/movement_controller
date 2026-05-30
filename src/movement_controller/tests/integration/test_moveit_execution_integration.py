@@ -39,9 +39,11 @@ import rclpy
 from geometry_msgs.msg import Point, PoseStamped
 from rclpy.action import GoalResponse
 
+from movement_controller.models.plan_result_dto import PlanResultDTO
 from movement_controller.ur_movement_controller import URMovementController
 
 _UUID1 = '00000000-0000-4000-8000-000000000001'
+_UUID2 = '00000000-0000-4000-8000-000000000002'
 
 
 def _make_path_msg(path_id=_UUID1, motion_type='LIN', circ_type='interim'):
@@ -86,16 +88,24 @@ def ros_context():
 
 @pytest.fixture
 def node_with_moveit(ros_context):
-    """URMovementController with MoveItPy mocked at module level and services injected."""
-    mock_plan_result = MagicMock()
-    mock_plan_result.__bool__ = MagicMock(return_value=True)
-    mock_plan_result.trajectory = MagicMock()
+    """URMovementController with MoveItPy mocked at module level and services injected.
 
-    mock_exec_status = MagicMock()
-    mock_exec_status.__bool__ = MagicMock(return_value=True)
-
+    Uses Phase 4 API: plan_all() + iterate_planned_trajectories() + TEM execution.
+    RobotTrajectory is patched at the module level so no moveit bindings are needed.
+    """
     mock_moveit = MagicMock()
-    mock_moveit.execute.return_value = mock_exec_status
+
+    # TEM mock
+    mock_tem = MagicMock()
+    mock_tem.execute_and_wait = MagicMock(return_value=None)
+    mock_moveit.get_trajectory_execution_manager.return_value = mock_tem
+    mock_moveit.get_robot_model.return_value = MagicMock()
+
+    # Scene monitor mock for ref_state
+    mock_scene_ctx = MagicMock()
+    mock_scene_ctx.__enter__ = MagicMock(return_value=MagicMock(current_state=MagicMock()))
+    mock_scene_ctx.__exit__ = MagicMock(return_value=False)
+    mock_moveit.get_planning_scene_monitor.return_value.read_only.return_value = mock_scene_ctx
 
     with patch('movement_controller.ur_movement_controller.MoveItPy', return_value=mock_moveit):
         n = URMovementController()
@@ -103,16 +113,20 @@ def node_with_moveit(ros_context):
     n._is_active = True
     n._moveit = mock_moveit
 
-    # Inject mock planner service that returns success by default
-    mock_planner = MagicMock()
-    mock_planner.plan.return_value = MagicMock(
+    # Default: single-path success — 1 group with 1 trajectory
+    default_dto = PlanResultDTO(
         success=True,
-        trajectory=MagicMock(),
-        error_message='',
+        trajectories=[MagicMock()],
+        path_ids=[_UUID1],
+        blended=False,
     )
+    mock_planner = MagicMock()
+    mock_planner.iterate_planned_trajectories = MagicMock(return_value=iter([default_dto]))
     n._planner_service = mock_planner
 
-    yield n
+    with patch('movement_controller.ur_movement_controller.RobotTrajectory'):
+        yield n
+
     n.destroy_node()
 
 
@@ -124,6 +138,7 @@ def test_execute_trajectory_single_path_success(node_with_moveit):
     """1-path LIN goal → result.success=True, 2 feedback calls, path_id in completed list."""
     mock_goal_handle = MagicMock()
     mock_goal_handle.request.paths = [_make_path_msg(_UUID1, 'LIN')]
+    mock_goal_handle.is_cancel_requested = False
     mock_goal_handle.publish_feedback = MagicMock()
     mock_goal_handle.succeed = MagicMock()
 
@@ -136,9 +151,14 @@ def test_execute_trajectory_single_path_success(node_with_moveit):
 
 
 def test_execute_trajectory_feedback_order(node_with_moveit):
-    """Per-path feedback order: executing first, then completed (D-15)."""
+    """Per-group feedback order: executing first, then completed (D-01/D-15)."""
+    # Reset iterator so this test gets its own DTO (fixture iterator is consumed once)
+    dto = PlanResultDTO(success=True, trajectories=[MagicMock()], path_ids=[_UUID1], blended=False)
+    node_with_moveit._planner_service.iterate_planned_trajectories = MagicMock(return_value=iter([dto]))
+
     mock_goal_handle = MagicMock()
     mock_goal_handle.request.paths = [_make_path_msg(_UUID1, 'LIN')]
+    mock_goal_handle.is_cancel_requested = False
     mock_goal_handle.publish_feedback = MagicMock()
     mock_goal_handle.succeed = MagicMock()
 
@@ -153,16 +173,18 @@ def test_execute_trajectory_feedback_order(node_with_moveit):
 
 
 def test_execute_trajectory_aborts_on_plan_failure(node_with_moveit, monkeypatch):
-    """Planning failure → result.success=False, path_id in error_message, abort called."""
-    error_msg = f'PILZ LIN planning failed for path {_UUID1!r}'
+    """Planning failure DTO → result.success=False, error_message set, abort called."""
+    error_msg = f'Sequence planning failed for paths: [\'{ _UUID1 }\']'
+    failure_dto = PlanResultDTO(success=False, path_ids=[_UUID1], error_message=error_msg)
     monkeypatch.setattr(
         node_with_moveit._planner_service,
-        'plan',
-        MagicMock(return_value=MagicMock(success=False, trajectory=None, error_message=error_msg)),
+        'iterate_planned_trajectories',
+        MagicMock(return_value=iter([failure_dto])),
     )
 
     mock_goal_handle = MagicMock()
     mock_goal_handle.request.paths = [_make_path_msg(_UUID1, 'LIN')]
+    mock_goal_handle.is_cancel_requested = False
     mock_goal_handle.publish_feedback = MagicMock()
     mock_goal_handle.abort = MagicMock()
     mock_goal_handle.succeed = MagicMock()
@@ -170,19 +192,28 @@ def test_execute_trajectory_aborts_on_plan_failure(node_with_moveit, monkeypatch
     result = asyncio.run(node_with_moveit._execute_callback(mock_goal_handle))
 
     assert result.success is False
-    assert _UUID1 in result.error_message
+    assert result.error_message == error_msg
     mock_goal_handle.abort.assert_called_once()
     mock_goal_handle.succeed.assert_not_called()
 
 
 def test_execute_trajectory_aborts_on_execution_failure(node_with_moveit, monkeypatch):
-    """Execution failure → result.success=False, path_id in error_message, abort called."""
-    failing_exec = MagicMock()
-    failing_exec.__bool__ = MagicMock(return_value=False)
-    monkeypatch.setattr(node_with_moveit._moveit, 'execute', MagicMock(return_value=failing_exec))
+    """TEM execute_and_wait raising an exception → result.success=False, abort called."""
+    success_dto = PlanResultDTO(
+        success=True, trajectories=[MagicMock()], path_ids=[_UUID1], blended=False
+    )
+    monkeypatch.setattr(
+        node_with_moveit._planner_service,
+        'iterate_planned_trajectories',
+        MagicMock(return_value=iter([success_dto])),
+    )
+    # Make TEM raise to simulate execution failure
+    tem = node_with_moveit._moveit.get_trajectory_execution_manager()
+    monkeypatch.setattr(tem, 'execute_and_wait', MagicMock(side_effect=RuntimeError('TEM failed')))
 
     mock_goal_handle = MagicMock()
     mock_goal_handle.request.paths = [_make_path_msg(_UUID1, 'LIN')]
+    mock_goal_handle.is_cancel_requested = False
     mock_goal_handle.publish_feedback = MagicMock()
     mock_goal_handle.abort = MagicMock()
     mock_goal_handle.succeed = MagicMock()
@@ -190,14 +221,18 @@ def test_execute_trajectory_aborts_on_execution_failure(node_with_moveit, monkey
     result = asyncio.run(node_with_moveit._execute_callback(mock_goal_handle))
 
     assert result.success is False
-    assert _UUID1 in result.error_message
+    assert 'TEM failed' in result.error_message
     mock_goal_handle.abort.assert_called_once()
 
 
 def test_execute_trajectory_circ_path_success(node_with_moveit):
     """CIRC path with valid circ_type='interim' → result.success=True (D-15)."""
+    dto = PlanResultDTO(success=True, trajectories=[MagicMock()], path_ids=[_UUID1], blended=False)
+    node_with_moveit._planner_service.iterate_planned_trajectories = MagicMock(return_value=iter([dto]))
+
     mock_goal_handle = MagicMock()
     mock_goal_handle.request.paths = [_make_path_msg(_UUID1, 'CIRC', circ_type='interim')]
+    mock_goal_handle.is_cancel_requested = False
     mock_goal_handle.publish_feedback = MagicMock()
     mock_goal_handle.succeed = MagicMock()
 

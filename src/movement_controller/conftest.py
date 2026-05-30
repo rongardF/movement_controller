@@ -68,9 +68,13 @@ _MOVEIT_MODULES = [
     'moveit_msgs.msg',
     'moveit_msgs.srv',
 ]
+import importlib as _importlib
 for _mod_name in _MOVEIT_MODULES:
     if _mod_name not in sys.modules:
-        sys.modules[_mod_name] = MagicMock()
+        try:
+            _importlib.import_module(_mod_name)
+        except ImportError:
+            sys.modules[_mod_name] = MagicMock()
 
 
 # ---------------------------------------------------------------------------

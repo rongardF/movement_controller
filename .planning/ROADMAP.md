@@ -79,10 +79,10 @@ Plans:
 **Plans:** 4 plans
 
 Plans:
-- [ ] 04-01-PLAN.md — Foundation: PlanResultDTO extension (path_ids, blended, trajectories); PilzPlannerService constructor + node param + GetMotionSequence client; URMovementController on_configure update
-- [ ] 04-02-PLAN.md — Look-ahead thread: plan_all, _planning_loop, _plan_group_sequence (MotionSequenceRequest), iterate_planned_trajectories generator, cancel (D-03 through D-09)
-- [ ] 04-03-PLAN.md — Controller wiring: _execute_callback generator loop with group-level feedback and TEM execution; _cancel_callback; ActionServer cancel_callback wiring (D-01, D-02, D-10)
-- [ ] 04-04-PLAN.md — Tests: unit tests for plan_all/iterate/cancel (mock service client); updated integration tests for Phase 4 API; 3-path blended scenario; cancel scenario
+- [x] 04-01-PLAN.md — Foundation: PlanResultDTO extension (path_ids, blended, trajectories); PilzPlannerService constructor + node param + GetMotionSequence client; URMovementController on_configure update
+- [x] 04-02-PLAN.md — Look-ahead thread: plan_all, _planning_loop, _plan_group_sequence (MotionSequenceRequest), iterate_planned_trajectories generator, cancel (D-03 through D-09)
+- [x] 04-03-PLAN.md — Controller wiring: _execute_callback generator loop with group-level feedback and TEM execution; _cancel_callback; ActionServer cancel_callback wiring (D-01, D-02, D-10)
+- [x] 04-04-PLAN.md — Tests: unit tests for plan_all/iterate/cancel (mock service client); updated integration tests for Phase 4 API; 3-path blended scenario; cancel scenario
 
 **Success criteria:**
 - 3-path blended trajectory executes with no stop between segments in simulation

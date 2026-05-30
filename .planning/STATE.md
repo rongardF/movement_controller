@@ -4,9 +4,9 @@
 
 ## Current Status
 
-**Phase:** 4 — Look-Ahead Planning & Blended Multi-Path Execution  
+**Phase:** 5 — Motion Constraints  
 **Current Phase:** Not started  
-**Next Action:** Run `/gsd-execute-phase 4` when ready to execute Phase 4
+**Next Action:** Run `/gsd-execute-phase 5` when ready to execute Phase 5
 
 ## Phase History
 
@@ -15,7 +15,7 @@
 | 1 — Package Scaffold & Interface Definitions | Completed | 2026-05-27 |
 | 2 — LifecycleNode & Action Server Skeleton | Completed | 2026-05-27 |
 | 3 — MoveIt2 + PILZ Single-Path Execution | Completed | 2026-05-28 |
-| 4 — Look-Ahead Planning & Blended Multi-Path Execution | Not started | — |
+| 4 — Look-Ahead Planning & Blended Multi-Path Execution | Completed | 2026-05-29 |
 | 5 — Motion Constraints | Not started | — |
 | 6 — Scene Management Service | Not started | — |
 | 7 — Launch Files & Simulation Validation | Not started | — |

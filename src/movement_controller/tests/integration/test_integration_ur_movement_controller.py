@@ -64,6 +64,7 @@ from movement_controller.action import (
     ExecuteTrajectory,
     ExecuteTrajectory_GetResult_Response as ExecuteTrajectoryResponse,
 )
+from movement_controller.models.constraint_config_dto import ConstraintConfigDTO
 from movement_controller.msg import TrajectoryPath
 from movement_controller.ur_movement_controller import URMovementController
 
@@ -258,6 +259,17 @@ def controller(executor, mock_move_group):
     """
     node = URMovementController()
     executor.add_node(node)
+
+    # Initialize STRING_ARRAY / DOUBLE_ARRAY constraint parameters to empty lists.
+    # These are declared without defaults in URMovementController.__init__ (Phase 5 Plan 01)
+    # and raise ParameterUninitializedException if not set before on_configure().
+    from rclpy.parameter import Parameter
+    node.set_parameters([
+        Parameter('constraints.joint.names', Parameter.Type.STRING_ARRAY, []),
+        Parameter('constraints.joint.lower_limits', Parameter.Type.DOUBLE_ARRAY, []),
+        Parameter('constraints.joint.upper_limits', Parameter.Type.DOUBLE_ARRAY, []),
+        Parameter('constraints.joint.max_velocities', Parameter.Type.DOUBLE_ARRAY, []),
+    ])
 
     cfg_state = LifecycleState(label='unconfigured', state_id=0)
     assert node.on_configure(cfg_state) == TransitionCallbackReturn.SUCCESS
@@ -478,3 +490,64 @@ def test_execution_failure_returns_error(action_client, mock_move_group):
     assert mock_move_group.exec_request_count == 1
 
 # endregion: error propagation tests
+
+
+# region: workspace constraint integration tests
+
+def test_workspace_constraint_violation_causes_planning_failure(
+    action_client, mock_move_group, controller
+):
+    """Workspace constraint active + planning failure → action result success=False.
+
+    Injects a ConstraintConfigDTO(z_max=0.5) directly into the planner service to
+    activate a workspace bounding box.  Sets planning_success=False to simulate PILZ
+    ValidateSolution rejecting a path that exceeds the workspace bounds.
+    Verifies the failure is propagated back to the action client.
+    """
+    try:
+        mock_move_group.reset(planning_success=False)
+        controller._planner_service.set_constraints(ConstraintConfigDTO(z_max=0.5))
+
+        path = _make_lin_path(_PATH_ID_1)
+        path.target_pose.pose.position.z = 2.0  # exceeds z_max=0.5
+
+        goal = ExecuteTrajectory.Goal()
+        goal.paths = [path]
+
+        response = _send_goal_and_wait(action_client, goal)
+
+        assert response is not None, 'goal timed out'
+        assert response.success is False
+        assert response.error_message != ''
+        assert mock_move_group.plan_request_count >= 1
+    finally:
+        controller._planner_service._constraint_config = None
+        mock_move_group.reset()
+
+
+def test_workspace_constraint_planning_success_when_path_in_bounds(
+    action_client, mock_move_group, controller
+):
+    """Workspace constraint active with generous bounds → planning succeeds.
+
+    Verifies that the constraint infrastructure does not break a valid goal
+    when the path is within the workspace bounds and planning succeeds.
+    """
+    try:
+        mock_move_group.reset(planning_success=True)
+        controller._planner_service.set_constraints(ConstraintConfigDTO(z_max=2.0))
+
+        path = _make_lin_path(_PATH_ID_1)  # default z=0.5, within z_max=2.0
+
+        goal = ExecuteTrajectory.Goal()
+        goal.paths = [path]
+
+        response = _send_goal_and_wait(action_client, goal)
+
+        assert response is not None, 'goal timed out'
+        assert response.success is True
+    finally:
+        controller._planner_service._constraint_config = None
+        mock_move_group.reset()
+
+# endregion: workspace constraint integration tests

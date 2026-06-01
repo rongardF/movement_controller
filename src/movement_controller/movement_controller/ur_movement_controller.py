@@ -26,6 +26,7 @@
 # POSSIBILITY OF SUCH DAMAGE.
 """URMovementController — ROS2 LifecycleNode for UR robot trajectory execution."""
 
+import math
 from threading import Lock
 
 import rclpy
@@ -38,6 +39,7 @@ from rclpy.callback_groups import ReentrantCallbackGroup
 from rclpy.executors import MultiThreadedExecutor
 from rclpy.lifecycle import LifecycleNode
 from rclpy.lifecycle.node import LifecycleState, TransitionCallbackReturn
+from rclpy.parameter import Parameter as RosParameter
 
 from moveit_msgs.msg import MoveItErrorCodes
 from moveit_msgs.srv import GetPlanningScene
@@ -53,7 +55,7 @@ from movement_controller.exceptions import (
     NotInitializedError
 )
 from movement_controller.enums.feedback_status_enum import FeedbackStatusEnum
-from movement_controller.models import TrajectoryGoalDTO
+from movement_controller.models import TrajectoryGoalDTO, ConstraintConfigDTO
 from movement_controller.services.pilz_planner_service import PilzPlannerService
 from movement_controller.utils.trajectory_grouper import TrajectoryGrouper
 
@@ -69,6 +71,7 @@ class URMovementController(LifecycleNode):
         self._executing_lock: Lock = Lock()
         self._planner_service: PilzPlannerService | None = None
         self._trajectory_goal: TrajectoryGoalDTO | None = None
+        self._constraint_config: ConstraintConfigDTO | None = None
 
         # region: parameters
         self.declare_parameter(
@@ -80,6 +83,89 @@ class URMovementController(LifecycleNode):
             'moveit_connection_timeout',
             10.0,
             ParameterDescriptor(description='Seconds to wait for MoveItPy to connect before failing on_configure'),
+        )
+
+        # Workspace bounding box constraint parameters
+        self.declare_parameter(
+            'constraints.workspace.x_min',
+            -1e9,
+            ParameterDescriptor(description='Workspace bounding box x lower bound (m). Sentinel -1e9 = unconstrained.'),
+        )
+        self.declare_parameter(
+            'constraints.workspace.x_max',
+            1e9,
+            ParameterDescriptor(description='Workspace bounding box x upper bound (m). Sentinel +1e9 = unconstrained.'),
+        )
+        self.declare_parameter(
+            'constraints.workspace.y_min',
+            -1e9,
+            ParameterDescriptor(description='Workspace bounding box y lower bound (m). Sentinel -1e9 = unconstrained.'),
+        )
+        self.declare_parameter(
+            'constraints.workspace.y_max',
+            1e9,
+            ParameterDescriptor(description='Workspace bounding box y upper bound (m). Sentinel +1e9 = unconstrained.'),
+        )
+        self.declare_parameter(
+            'constraints.workspace.z_min',
+            -1e9,
+            ParameterDescriptor(description='Workspace bounding box z lower bound (m). Sentinel -1e9 = unconstrained.'),
+        )
+        self.declare_parameter(
+            'constraints.workspace.z_max',
+            1e9,
+            ParameterDescriptor(description='Workspace bounding box z upper bound (m). Sentinel +1e9 = unconstrained.'),
+        )
+
+        # Joint constraint parameters
+        self.declare_parameter(
+            'constraints.joint.names',
+            RosParameter.Type.STRING_ARRAY,
+            ParameterDescriptor(description='Joint names for position constraints (string[]). Empty = no joint constraints.'),
+        )
+        self.declare_parameter(
+            'constraints.joint.lower_limits',
+            RosParameter.Type.DOUBLE_ARRAY,
+            ParameterDescriptor(description='Lower joint position limits in radians, same order as constraints.joint.names.'),
+        )
+        self.declare_parameter(
+            'constraints.joint.upper_limits',
+            RosParameter.Type.DOUBLE_ARRAY,
+            ParameterDescriptor(description='Upper joint position limits in radians, same order as constraints.joint.names.'),
+        )
+        self.declare_parameter(
+            'constraints.joint.max_velocities',
+            RosParameter.Type.DOUBLE_ARRAY,
+            ParameterDescriptor(description='Max joint velocities in rad/s, same order as constraints.joint.names. Stored but not injected (PILZ has no per-joint velocity API).'),
+        )
+
+        # Orientation constraint parameters
+        self.declare_parameter(
+            'constraints.orientation.tolerance_x',
+            math.pi * 2,
+            ParameterDescriptor(description='Orientation tolerance around x axis (radians). Default 2π = unconstrained.'),
+        )
+        self.declare_parameter(
+            'constraints.orientation.tolerance_y',
+            math.pi * 2,
+            ParameterDescriptor(description='Orientation tolerance around y axis (radians). Default 2π = unconstrained.'),
+        )
+        self.declare_parameter(
+            'constraints.orientation.tolerance_z',
+            math.pi * 2,
+            ParameterDescriptor(description='Orientation tolerance around z axis (radians). Default 2π = unconstrained.'),
+        )
+
+        # Speed/acceleration cap parameters
+        self.declare_parameter(
+            'constraints.max_cartesian_speed',
+            0.0,
+            ParameterDescriptor(description='Node-level max cartesian speed cap (0..1 ratio, 0.0 = unconstrained). Goals with any path.cartesian_speed exceeding this are rejected.'),
+        )
+        self.declare_parameter(
+            'constraints.max_acceleration',
+            0.0,
+            ParameterDescriptor(description='Node-level max acceleration cap (0..1 ratio, 0.0 = unconstrained).'),
         )
         # endregion: parameters
 
@@ -95,6 +181,48 @@ class URMovementController(LifecycleNode):
         moveit_group_name = self.get_parameter('moveit_group_name').get_parameter_value().string_value
         self._planner_service = PilzPlannerService(node=self, moveit_group_name=moveit_group_name)
         self.get_logger().info('PilzPlannerService initialised successfully')
+
+        # Read and validate constraint parameters
+        x_min = self.get_parameter('constraints.workspace.x_min').get_parameter_value().double_value
+        x_max = self.get_parameter('constraints.workspace.x_max').get_parameter_value().double_value
+        y_min = self.get_parameter('constraints.workspace.y_min').get_parameter_value().double_value
+        y_max = self.get_parameter('constraints.workspace.y_max').get_parameter_value().double_value
+        z_min = self.get_parameter('constraints.workspace.z_min').get_parameter_value().double_value
+        z_max = self.get_parameter('constraints.workspace.z_max').get_parameter_value().double_value
+        names_param = self.get_parameter('constraints.joint.names').get_parameter_value().string_array_value
+        lower_param = self.get_parameter('constraints.joint.lower_limits').get_parameter_value().double_array_value
+        upper_param = self.get_parameter('constraints.joint.upper_limits').get_parameter_value().double_array_value
+        vel_param = self.get_parameter('constraints.joint.max_velocities').get_parameter_value().double_array_value
+        tol_x = self.get_parameter('constraints.orientation.tolerance_x').get_parameter_value().double_value
+        tol_y = self.get_parameter('constraints.orientation.tolerance_y').get_parameter_value().double_value
+        tol_z = self.get_parameter('constraints.orientation.tolerance_z').get_parameter_value().double_value
+        max_cart_speed = self.get_parameter('constraints.max_cartesian_speed').get_parameter_value().double_value
+        max_accel = self.get_parameter('constraints.max_acceleration').get_parameter_value().double_value
+
+        try:
+            dto = ConstraintConfigDTO(
+                x_min=x_min,
+                x_max=x_max,
+                y_min=y_min,
+                y_max=y_max,
+                z_min=z_min,
+                z_max=z_max,
+                joint_names=list(names_param),
+                joint_lower_limits=list(lower_param),
+                joint_upper_limits=list(upper_param),
+                joint_max_velocities=list(vel_param),
+                orientation_tolerance_x=tol_x,
+                orientation_tolerance_y=tol_y,
+                orientation_tolerance_z=tol_z,
+                max_cartesian_speed=max_cart_speed,
+                max_acceleration=max_accel,
+            )
+        except ValidationError as e:
+            self.get_logger().error(f'Constraint parameter validation failed: {e}')
+            return TransitionCallbackReturn.FAILURE
+        self._constraint_config = dto
+        self._planner_service.set_constraints(dto)
+        self.get_logger().info('Constraint configuration applied successfully')
 
         return TransitionCallbackReturn.SUCCESS
 
@@ -320,6 +448,8 @@ class URMovementController(LifecycleNode):
         """
         if self._planner_service is not None:
             self._planner_service.cancel()
+        # TODO: use 'async' callback when executing so we can abort the goal handle immediately here instead of waiting 
+        # for the execute callback to check the cancel event and abort on its own schedule
         return CancelResponse.ACCEPT
 
     # endregion: callbacks

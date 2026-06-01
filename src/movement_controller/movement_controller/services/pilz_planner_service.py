@@ -61,6 +61,7 @@ from movement_controller.exceptions import (
     NotInitializedError
 )
 from movement_controller.models import (
+    ConstraintConfigDTO,
     PlanResultDTO,
     PlanningSessionDTO,
     TrajectoryPathDTO
@@ -83,6 +84,7 @@ class PilzPlannerService:
         self._plan_queue: Queue[PlanResultDTO|AbortPlanningError|StopIteration] | None = None
         self._cancel_event: Event | None = None
         self._planning_session: PlanningSessionDTO | None = None
+        self._constraint_config: ConstraintConfigDTO | None = None
 
         self._callback_group = ReentrantCallbackGroup()
 
@@ -169,8 +171,8 @@ class PilzPlannerService:
             item.req.pipeline_id = 'pilz_industrial_motion_planner'
             item.req.planner_id = path_dto.motion_type.value  # 'LIN', 'PTP', or 'CIRC'
             item.req.allowed_planning_time = 5.0
-            item.req.max_velocity_scaling_factor = 0.1  # TODO: these must come from constraints; work for phases after 4
-            item.req.max_acceleration_scaling_factor = 0.1
+            item.req.max_velocity_scaling_factor = 1.0
+            item.req.max_acceleration_scaling_factor = 1.0
             item.req.goal_constraints = [
                 self._build_pose_goal_constraints(
                     path_dto.tool_frame or 'tool0', path_dto.target_pose
@@ -293,6 +295,10 @@ class PilzPlannerService:
     # endregion: callbacks
 
     # region: public methods
+    def set_constraints(self, dto: ConstraintConfigDTO) -> None:
+        """Store validated constraint config; used by _build_path_constraints()."""
+        self._constraint_config = dto
+
     def on_activate(self) -> None:
         self._plan_seq_client = self._node.create_client(
             srv_type=GetMotionSequence,

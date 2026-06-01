@@ -45,6 +45,7 @@ whose ``dlopen`` calls need these libraries.  Prepending the build directory to
 
 import os
 import sys
+from unittest.mock import MagicMock
 
 
 def pytest_configure(config):  # noqa: ARG001
@@ -92,8 +93,8 @@ def pytest_configure(config):  # noqa: ARG001
     try:
         from movement_controller.models.plan_result_dto import PlanResultDTO
         from movement_controller.models.planning_session_dto import PlanningSessionDTO
-        PlanResultDTO.model_rebuild(_types_namespace={'MotionSequenceResponse': object})
-        PlanningSessionDTO.model_rebuild(_types_namespace={'RobotState': object})
+        PlanResultDTO.model_rebuild(_types_namespace={'MotionSequenceResponse': MagicMock})
+        PlanningSessionDTO.model_rebuild(_types_namespace={'RobotState': MagicMock})
     except Exception:
         pass  # best-effort; a clear error will surface during test execution if needed
 
@@ -104,6 +105,6 @@ def pytest_configure(config):  # noqa: ARG001
         return
     try:
         from moveit_msgs.msg._constraints import Constraints as _RealConstraints
-        sys.modules['moveit_msgs.msg'].Constraints = _RealConstraints
+        sys.modules['moveit_msgs.msg'].Constraints = _RealConstraints  # type: ignore
     except ImportError:
         pass  # real moveit_msgs not installed — integration tests will skip naturally

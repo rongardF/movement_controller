@@ -34,6 +34,7 @@ from rclpy.action import ActionClient, ActionServer, GoalResponse, CancelRespons
 from rclpy.action.server import ServerGoalHandle
 from rclpy.action.client import CancelGoal
 from rclpy.lifecycle.node import TransitionCallbackReturn, LifecycleState
+from rclpy.parameter import Parameter
 from geometry_msgs.msg import Point, PoseStamped
 from moveit_msgs.msg import MoveItErrorCodes, MotionSequenceResponse, RobotTrajectory
 from moveit_msgs.action import (
@@ -44,6 +45,7 @@ from movement_controller.msg import TrajectoryPath
 from movement_controller.action import ExecuteTrajectory
 
 from movement_controller.models import PlanResultDTO, TrajectoryGoalDTO
+from movement_controller.models.constraint_config_dto import ConstraintConfigDTO
 from movement_controller.services import PilzPlannerService
 from movement_controller.ur_movement_controller import URMovementController
 
@@ -303,9 +305,25 @@ def test_cancel_callback_safe_when_planner_not_configured(node):
 # endregion: cancel callback
 
 # region: lifecycle node callbacks
+def _set_array_constraint_params(node) -> None:
+    """Set STRING_ARRAY / DOUBLE_ARRAY constraint params to empty lists.
+
+    These parameters are declared without defaults in URMovementController.__init__
+    (added in Phase 5 Plan 01). Tests that call on_configure() must initialize them
+    to avoid ParameterUninitializedException.
+    """
+    node.set_parameters([
+        Parameter('constraints.joint.names', Parameter.Type.STRING_ARRAY, []),
+        Parameter('constraints.joint.lower_limits', Parameter.Type.DOUBLE_ARRAY, []),
+        Parameter('constraints.joint.upper_limits', Parameter.Type.DOUBLE_ARRAY, []),
+        Parameter('constraints.joint.max_velocities', Parameter.Type.DOUBLE_ARRAY, []),
+    ])
+
+
 def test_on_configure_creates_planner_service(node):
     """on_configure() instantiates PilzPlannerService and stores it on the node."""
     assert node._planner_service is None
+    _set_array_constraint_params(node)
     mock_state = LifecycleState(label='unconfigured', state_id=0)
 
     with patch(
@@ -321,6 +339,7 @@ def test_on_configure_creates_planner_service(node):
 
 def test_on_configure_uses_moveit_group_name_parameter(node):
     """on_configure() passes the moveit_group_name parameter value to PilzPlannerService."""
+    _set_array_constraint_params(node)
     mock_state = LifecycleState(label='unconfigured', state_id=0)
 
     with patch(
@@ -452,3 +471,83 @@ def test_on_deactivate_is_idempotent_when_resources_are_none(node):
     assert result == TransitionCallbackReturn.SUCCESS
 
 # endregion: lifecycle node callbacks
+
+
+# region: speed and acceleration cap enforcement tests
+
+def test_goal_rejected_when_cartesian_speed_exceeds_max(node):
+    """_goal_callback rejects when path.cartesian_speed > max_cartesian_speed."""
+    node._constraint_config = ConstraintConfigDTO(max_cartesian_speed=0.5)
+    goal = _make_ros_goal()
+    goal.paths[0].cartesian_speed = 0.8  # exceeds 0.5 cap
+    try:
+        result = node._goal_callback(goal)
+        assert result == GoalResponse.REJECT
+        assert node._is_executing is False
+    finally:
+        node._constraint_config = None
+
+
+def test_goal_accepted_when_cartesian_speed_within_max(node):
+    """_goal_callback accepts when path.cartesian_speed <= max_cartesian_speed."""
+    node._constraint_config = ConstraintConfigDTO(max_cartesian_speed=0.5)
+    goal = _make_ros_goal()
+    goal.paths[0].cartesian_speed = 0.3  # within cap
+    try:
+        result = node._goal_callback(goal)
+        assert result == GoalResponse.ACCEPT
+    finally:
+        node._is_executing = False
+        node._constraint_config = None
+
+
+def test_goal_accepted_when_max_cartesian_speed_is_zero(node):
+    """max_cartesian_speed=0.0 (sentinel) → speed check skipped, any speed accepted."""
+    node._constraint_config = ConstraintConfigDTO(max_cartesian_speed=0.0)
+    goal = _make_ros_goal()
+    goal.paths[0].cartesian_speed = 999.0
+    try:
+        result = node._goal_callback(goal)
+        assert result == GoalResponse.ACCEPT
+    finally:
+        node._is_executing = False
+        node._constraint_config = None
+
+
+def test_goal_rejected_when_acceleration_exceeds_max(node):
+    """_goal_callback rejects when path.acceleration > max_acceleration."""
+    node._constraint_config = ConstraintConfigDTO(max_acceleration=0.3)
+    goal = _make_ros_goal()
+    goal.paths[0].acceleration = 0.5  # exceeds 0.3 cap
+    try:
+        result = node._goal_callback(goal)
+        assert result == GoalResponse.REJECT
+        assert node._is_executing is False
+    finally:
+        node._constraint_config = None
+
+
+def test_goal_accepted_when_constraint_config_is_none(node):
+    """When _constraint_config is None, no speed check is performed."""
+    assert node._constraint_config is None
+    goal = _make_ros_goal()
+    goal.paths[0].cartesian_speed = 999.0
+    goal.paths[0].acceleration = 999.0
+    result = node._goal_callback(goal)
+    assert result == GoalResponse.ACCEPT
+    node._is_executing = False
+
+
+def test_goal_accepted_when_path_speed_is_zero(node):
+    """path.cartesian_speed=0.0 → check skipped (0.0 means unspecified in path)."""
+    node._constraint_config = ConstraintConfigDTO(max_cartesian_speed=0.5)
+    goal = _make_ros_goal()
+    goal.paths[0].cartesian_speed = 0.0  # unspecified
+    try:
+        result = node._goal_callback(goal)
+        assert result == GoalResponse.ACCEPT
+    finally:
+        node._is_executing = False
+        node._constraint_config = None
+
+# endregion: speed and acceleration cap enforcement tests

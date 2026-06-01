@@ -51,6 +51,7 @@ from trajectory_msgs.msg import JointTrajectoryPoint
 from movement_controller.enums.motion_type_enum import MotionTypeEnum
 from movement_controller.exceptions.abort_planning_error import AbortPlanningError
 from movement_controller.exceptions.not_initialized_error import NotInitializedError
+from movement_controller.models.constraint_config_dto import ConstraintConfigDTO
 from movement_controller.models.plan_result_dto import PlanResultDTO
 from movement_controller.models.planning_session_dto import PlanningSessionDTO
 from movement_controller.models.trajectory_path_dto import TrajectoryPathDTO
@@ -434,3 +435,76 @@ def test_scene_retrieval_failure_raises_abort_error():
         list(svc.iterate_planned_trajectories())
 
 # endregion: planning-failure / error-path tests
+
+
+# region: set_constraints and constraint injection tests
+
+def test_set_constraints_stores_dto():
+    """set_constraints() stores the dto as _constraint_config."""
+    svc, _, _ = _build_service()
+    dto = ConstraintConfigDTO()
+    svc.set_constraints(dto)
+    assert svc._constraint_config is dto
+
+
+def test_set_constraints_logs_warning_for_nonempty_max_velocities():
+    """set_constraints() logs a warning when joint_max_velocities is non-empty."""
+    svc, _, _ = _build_service()
+    dto = ConstraintConfigDTO(
+        joint_names=['j1'],
+        joint_lower_limits=[-1.0],
+        joint_upper_limits=[1.0],
+        joint_max_velocities=[0.5],
+    )
+    svc.set_constraints(dto)
+    svc._node.get_logger.return_value.warning.assert_called_once()
+    warning_args = svc._node.get_logger.return_value.warning.call_args[0][0]
+    assert 'max_velocities' in warning_args or 'D-13' in warning_args
+
+
+def test_set_constraints_no_warning_when_max_velocities_empty():
+    """set_constraints() does NOT log a warning when joint_max_velocities is empty."""
+    svc, _, _ = _build_service()
+    dto = ConstraintConfigDTO(
+        joint_names=['j1'],
+        joint_lower_limits=[-1.0],
+        joint_upper_limits=[1.0],
+    )
+    svc.set_constraints(dto)
+    assert svc._node.get_logger.return_value.warning.call_count == 0
+
+
+def test_constraints_injected_into_every_sequence_item():
+    """Active workspace constraint is injected into every MotionSequenceItem."""
+    from shape_msgs.msg import SolidPrimitive
+
+    svc, _, _ = _build_service()
+    dto = ConstraintConfigDTO(x_min=-1.0, x_max=1.0)
+    svc.set_constraints(dto)
+
+    path1 = _make_path_dto(path_id=_UUID)
+    path2 = _make_path_dto(path_id=_UUID2)
+    seq_req = svc._generate_motion_sequence_request([path1, path2], RobotState())
+
+    assert len(seq_req.items) == 2
+    for item in seq_req.items:
+        pc_list = item.req.path_constraints.position_constraints
+        assert len(pc_list) > 0, 'Each item must have at least one position constraint'
+        assert pc_list[0].constraint_region.primitives[0].type == SolidPrimitive.BOX
+
+
+def test_constraints_not_injected_when_all_disabled():
+    """All-sentinel ConstraintConfigDTO → no constraints in generated items."""
+    svc, _, _ = _build_service()
+    dto = ConstraintConfigDTO()  # all at sentinel = all disabled
+    svc.set_constraints(dto)
+
+    path = _make_path_dto()
+    seq_req = svc._generate_motion_sequence_request([path], RobotState())
+
+    item = seq_req.items[0]
+    assert len(item.req.path_constraints.position_constraints) == 0
+    assert len(item.req.path_constraints.joint_constraints) == 0
+    assert len(item.req.path_constraints.orientation_constraints) == 0
+
+# endregion: set_constraints and constraint injection tests

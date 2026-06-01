@@ -89,6 +89,8 @@ class _ConstraintsStub:
     def __init__(self):
         self.name: str = ''
         self.position_constraints: list = []
+        self.joint_constraints: list = []
+        self.orientation_constraints: list = []
 
 
 if 'moveit_msgs.msg' in sys.modules:

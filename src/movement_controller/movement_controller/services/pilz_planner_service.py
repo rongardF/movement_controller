@@ -41,6 +41,7 @@ from rclpy.callback_groups import ReentrantCallbackGroup
 from moveit_msgs.msg import (
     BoundingVolume,
     Constraints,
+    JointConstraint,
     MoveItErrorCodes,
     MotionSequenceResponse,
     MotionSequenceItem,
@@ -121,6 +122,77 @@ class PilzPlannerService:
 
         return constraints
 
+    def _build_path_constraints(self, tool_frame: str) -> Constraints:
+        """Build path Constraints from the active constraint config for a given tool frame."""
+        constraints = Constraints()
+        if self._constraint_config is None:
+            return constraints
+        cfg = self._constraint_config
+
+        # Workspace BOX (when workspace bounds are tighter than sentinel range)
+        if cfg.workspace_enabled:
+            pos = PositionConstraint()
+            pos.header.frame_id = 'base_link'
+            pos.link_name = tool_frame
+            pos.weight = 1.0
+            box = SolidPrimitive()
+            box.type = SolidPrimitive.BOX
+            box.dimensions = [cfg.x_max - cfg.x_min, cfg.y_max - cfg.y_min, cfg.z_max - cfg.z_min]
+            center = Pose()
+            center.position.x = (cfg.x_max + cfg.x_min) / 2.0
+            center.position.y = (cfg.y_max + cfg.y_min) / 2.0
+            center.position.z = (cfg.z_max + cfg.z_min) / 2.0
+            center.orientation.w = 1.0
+            bv = BoundingVolume()
+            bv.primitives = [box]
+            bv.primitive_poses = [center]
+            pos.constraint_region = bv
+            constraints.position_constraints = [pos]
+
+        # Joint constraints (midpoint with symmetric tolerances)
+        if cfg.joint_constraints_enabled:
+            joint_constraints = []
+            for name, lower, upper in zip(
+                cfg.joint_names, cfg.joint_lower_limits, cfg.joint_upper_limits
+            ):
+                jc = JointConstraint()
+                jc.joint_name = name
+                jc.position = (lower + upper) / 2.0
+                jc.tolerance_above = upper - jc.position
+                jc.tolerance_below = jc.position - lower
+                jc.weight = 1.0
+                joint_constraints.append(jc)
+            constraints.joint_constraints = joint_constraints
+
+        # Orientation constraint (identity quaternion as neutral reference)
+        if cfg.orientation_constraint_enabled:
+            oc = OrientationConstraint()
+            oc.header.frame_id = 'base_link'
+            oc.link_name = tool_frame
+            oc.orientation.w = 1.0
+            oc.absolute_x_axis_tolerance = cfg.orientation_tolerance_x
+            oc.absolute_y_axis_tolerance = cfg.orientation_tolerance_y
+            oc.absolute_z_axis_tolerance = cfg.orientation_tolerance_z
+            oc.parameterization = 0
+            oc.weight = 1.0
+            constraints.orientation_constraints = [oc]
+
+        return constraints
+
+    def _merge_circ_and_path_constraints(self, circ: Constraints, path: Constraints) -> Constraints:
+        """Merge CIRC arc definition with phase-5 path constraints.
+
+        Preserves the CIRC arc point at position_constraints[0] and appends workspace BOX
+        (if any) from path constraints at [1:]. This avoids overwriting the arc definition
+        that PILZ reads for CIRC planning.
+        """
+        merged = Constraints()
+        merged.name = circ.name
+        merged.position_constraints = [circ.position_constraints[0]] + path.position_constraints
+        merged.joint_constraints = path.joint_constraints
+        merged.orientation_constraints = path.orientation_constraints
+        return merged
+
     def _build_circ_constraints(self, path_dto: TrajectoryPathDTO) -> Constraints:
         """Build path constraints for PILZ CIRC planner."""
         constraints = Constraints()
@@ -171,8 +243,8 @@ class PilzPlannerService:
             item.req.pipeline_id = 'pilz_industrial_motion_planner'
             item.req.planner_id = path_dto.motion_type.value  # 'LIN', 'PTP', or 'CIRC'
             item.req.allowed_planning_time = 5.0
-            item.req.max_velocity_scaling_factor = 1.0
-            item.req.max_acceleration_scaling_factor = 1.0
+            item.req.max_velocity_scaling_factor = max(0.01, min(1.0, path_dto.cartesian_speed)) if path_dto.cartesian_speed > 0.0 else 1.0
+            item.req.max_acceleration_scaling_factor = max(0.01, min(1.0, path_dto.acceleration)) if path_dto.acceleration > 0.0 else 1.0
             item.req.goal_constraints = [
                 self._build_pose_goal_constraints(
                     path_dto.tool_frame or 'tool0', path_dto.target_pose
@@ -182,9 +254,15 @@ class PilzPlannerService:
             if i == 0:
                 item.req.start_state = start_state_msg
 
+            path_constraints = self._build_path_constraints(path_dto.tool_frame or 'tool0')
             if path_dto.motion_type == MotionTypeEnum.CIRC:
-                item.req.path_constraints = self._build_circ_constraints(path_dto)
-                
+                circ_constraints = self._build_circ_constraints(path_dto)
+                item.req.path_constraints = self._merge_circ_and_path_constraints(
+                    circ_constraints, path_constraints
+                )
+            else:
+                item.req.path_constraints = path_constraints
+
             items.append(item)
         
         seq_req = MotionSequenceRequest()
@@ -298,6 +376,11 @@ class PilzPlannerService:
     def set_constraints(self, dto: ConstraintConfigDTO) -> None:
         """Store validated constraint config; used by _build_path_constraints()."""
         self._constraint_config = dto
+        if dto.joint_max_velocities:
+            self._logger.warning(
+                'constraints.joint.max_velocities is set but PILZ has no per-joint velocity API '
+                '\u2014 max_velocities will NOT be enforced in planning requests (D-13)'
+            )
 
     def on_activate(self) -> None:
         self._plan_seq_client = self._node.create_client(

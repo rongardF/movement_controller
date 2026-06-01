@@ -5,8 +5,8 @@
 ## Current Status
 
 **Phase:** 5 — Motion Constraints  
-**Current Plan:** 05-02 (plan 1 of 5 complete)  
-**Next Action:** Execute 05-02-PLAN.md
+**Current Plan:** Complete (5/5 plans)  
+**Next Action:** Begin Phase 6 — Scene Management Service
 
 ## Phase History
 
@@ -16,7 +16,7 @@
 | 2 — LifecycleNode & Action Server Skeleton | Completed | 2026-05-27 |
 | 3 — MoveIt2 + PILZ Single-Path Execution | Completed | 2026-05-28 |
 | 4 — Look-Ahead Planning & Blended Multi-Path Execution | Completed | 2026-05-29 |
-| 5 — Motion Constraints | In Progress (1/5 plans) | — |
+| 5 — Motion Constraints | Completed | 2026-06-01 |
 | 6 — Scene Management Service | Not started | — |
 | 7 — Launch Files & Simulation Validation | Not started | — |
 | 8 — Real Hardware Validation | Not started | — |
@@ -50,4 +50,4 @@
 - All planning docs committed to git (`commit_docs: true`)
 
 ---
-*Last updated: 2026-06-01 after Phase 5 Plan 1 (05-01) completion — ConstraintConfigDTO + 15 ROS2 parameters*
+*Last updated: 2026-06-01 after Phase 5 completion — all 5 plans executed, 109 unit tests + 9 integration tests passing*

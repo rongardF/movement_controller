@@ -100,11 +100,11 @@ Plans:
 **Plans:** 5 plans
 
 Plans:
-- [ ] 05-01-PLAN.md — ConstraintConfigDTO + 15 parameter declarations + on_configure wiring + PilzPlannerService set_constraints stub
-- [ ] 05-02-PLAN.md — _build_path_constraints + _merge_circ_and_path_constraints + _generate_motion_sequence_request updates + velocity warning
-- [ ] 05-03-PLAN.md — Speed/acceleration cap enforcement in _goal_callback (CON-05)
-- [ ] 05-04-PLAN.md — Unit tests: test_constraint_config_dto.py (new) + extensions to test_ur_movement_controller.py and test_pilz_planner_service.py
-- [ ] 05-05-PLAN.md — Integration test: workspace bounding-box violation causes planning failure (CON-01)
+- [x] 05-01-PLAN.md — ConstraintConfigDTO + 15 parameter declarations + on_configure wiring + PilzPlannerService set_constraints stub
+- [x] 05-02-PLAN.md — _build_path_constraints + _merge_circ_and_path_constraints + _generate_motion_sequence_request updates + velocity warning
+- [x] 05-03-PLAN.md — Speed/acceleration cap enforcement in _goal_callback (CON-05)
+- [x] 05-04-PLAN.md — Unit tests: test_constraint_config_dto.py (new) + extensions to test_ur_movement_controller.py and test_pilz_planner_service.py
+- [x] 05-05-PLAN.md — Integration test: workspace bounding-box violation causes planning failure (CON-01)
 
 **Success criteria:**
 - Node fails to plan a goal that violates any active constraint

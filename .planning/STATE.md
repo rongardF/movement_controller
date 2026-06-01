@@ -5,8 +5,8 @@
 ## Current Status
 
 **Phase:** 5 — Motion Constraints  
-**Current Phase:** Not started  
-**Next Action:** Run `/gsd-execute-phase 5` when ready to execute Phase 5
+**Current Plan:** 05-02 (plan 1 of 5 complete)  
+**Next Action:** Execute 05-02-PLAN.md
 
 ## Phase History
 
@@ -16,7 +16,7 @@
 | 2 — LifecycleNode & Action Server Skeleton | Completed | 2026-05-27 |
 | 3 — MoveIt2 + PILZ Single-Path Execution | Completed | 2026-05-28 |
 | 4 — Look-Ahead Planning & Blended Multi-Path Execution | Completed | 2026-05-29 |
-| 5 — Motion Constraints | Not started | — |
+| 5 — Motion Constraints | In Progress (1/5 plans) | — |
 | 6 — Scene Management Service | Not started | — |
 | 7 — Launch Files & Simulation Validation | Not started | — |
 | 8 — Real Hardware Validation | Not started | — |
@@ -29,6 +29,7 @@
 | MoveGroupSequence for blending | Committed | Native MoveIt2 blend mechanism |
 | Look-ahead parallel planning | Committed | Background thread plans N+1 during N execution |
 | Constraints as persistent node params | Committed | Not overridable per move |
+| ConstraintConfigDTO sentinel values | Committed | ±1e9 float sentinels (ROS2 float64 cannot represent Python inf) |
 | Abstract base now, UR10 only in v1 | Committed | `BaseMovementController` designed but only UR10 impl |
 
 ## Active Risks
@@ -49,4 +50,4 @@
 - All planning docs committed to git (`commit_docs: true`)
 
 ---
-*Last updated: 2026-05-28 after Phase 3 completion (4 plans, 4 waves) — 57 tests passing*
+*Last updated: 2026-06-01 after Phase 5 Plan 1 (05-01) completion — ConstraintConfigDTO + 15 ROS2 parameters*

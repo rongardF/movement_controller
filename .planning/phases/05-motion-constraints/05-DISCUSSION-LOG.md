@@ -155,6 +155,50 @@
 
 ---
 
+---
+
+## Area 10: ROS2 float64 infinity for workspace defaults
+
+**Question:** ROS2 float64 parameters don't support Python float('inf'). How should workspace bound defaults signal 'unconstrained'?
+
+| Option | Selected |
+|--------|----------|
+| Large float sentinels (-1e9 / +1e9) | ✅ |
+| Add constraints.workspace.enabled boolean | — |
+| 0.0 defaults with all-zeros-means-disabled | — |
+
+**Notes:** ConstraintConfigDTO treats workspace as disabled when sentinel range ≥ 2e9 on any axis.
+
+---
+
+## Area 11: Per-joint speed constraints
+
+**User freetext:** "joints should also have speed constraints array (lower/upper)"
+
+**Question 1:** Shape of joint speed constraints?
+
+| Option | Selected |
+|--------|----------|
+| Per-joint velocity limits (rad/s) via max_velocities[] | ✅ |
+| Single node-level max joint speed scalar | — |
+| Per-joint array + global fallback | — |
+
+**Question 2:** Share names[] array or separate?
+
+| Option | Selected |
+|--------|----------|
+| constraints.joint.max_velocities[] matching names[] | ✅ |
+| Separate constraints.joint_velocities.names + .values | — |
+
+**Question 3:** Enforcement?
+
+| Option | Selected |
+|--------|----------|
+| Planning-time only — passed to MoveIt2, no goal rejection | ✅ |
+| Goal validation + MoveIt2 joint velocity constraints | — |
+
+---
+
 ## Deferred Ideas
 
 _(None captured during discussion)_
@@ -170,5 +214,10 @@ _(None captured during discussion)_
   Researcher must determine which mechanism correctly controls the cartesian speed of
   a specified link in a PILZ `MotionSequenceItem`.
 
+- **[RESEARCH-02]** Correct MoveIt2/PILZ API for per-joint velocity overrides in
+  `MotionSequenceItem` (for `constraints.joint.max_velocities[]`).
+  Candidates: `MotionPlanRequest` velocity scaling, `JointConstraint` velocity field,
+  or robot model override mechanism.
+
 ---
-*Generated: 2026-06-01*
+*Generated: 2026-06-01 (updated with Areas 10–11)*

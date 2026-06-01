@@ -57,8 +57,15 @@ constraints.orientation.tolerance_y  (default: 2*pi — unconstrained)
 constraints.orientation.tolerance_z  (default: 2*pi — unconstrained)
 constraints.max_cartesian_speed  (default: 0.0 — unconstrained)
 constraints.max_acceleration     (default: 0.0 — unconstrained)
+constraints.joint.max_velocities (default: [] — empty list, rad/s per joint)
 ```
 All declared with `ParameterDescriptor(description=...)`.
+
+**Workspace default values:** `x_min/y_min/z_min` default to `-1e9`; `x_max/y_max/z_max` default to `+1e9`.
+ROS2 `float64` parameters do not support Python `float('inf')`. Use large float sentinels instead.
+`ConstraintConfigDTO` treats workspace as "disabled" when the min/max span covers the full
+`-1e9` to `+1e9` range (i.e., when defaults are unchanged). Researcher must define the
+exact disable detection rule (e.g., `x_max - x_min >= 2e9` → skip `PositionConstraint`).
 
 ### D-04: Sentinel Defaults Signal Disabled
 No separate `enabled` boolean parameters. Constraints are skipped when at their
@@ -117,6 +124,28 @@ On each `on_configure`, constraint configuration is rebuilt **fresh from paramet
 No caching: `ConstraintConfigDTO` is constructed anew and `set_constraints()` is
 called on the planner service again. This ensures lifecycle restart picks up any
 parameter changes made between deactivate and re-configure.
+
+### D-12: Workspace Bound Sentinels
+ROS2 `float64` parameters do not support Python `float('inf')`. Workspace bound parameters
+default to large float sentinels: `x_min/y_min/z_min = -1e9`, `x_max/y_max/z_max = +1e9`.
+`ConstraintConfigDTO` considers the workspace constraint **disabled** when the defaults are
+unchanged (sentinel range ≥ 2e9 on any axis). When disabled, no `PositionConstraint` is
+added to `MotionSequenceItem.constraints`. This avoids creating a technically-valid but
+practically unconstrained bounding-box that adds planning overhead.
+
+### D-13: Per-Joint Velocity Limits
+A new parameter `constraints.joint.max_velocities float64[]` (default: `[]`) is added alongside
+the existing joint position arrays. It shares the same `constraints.joint.names` array for
+joint identification — all three arrays (`names`, `lower_limits`, `upper_limits`, `max_velocities`)
+must have the same length when any is non-empty (validated by `ConstraintConfigDTO`).
+- **Enforcement:** Planning-time only. Per-joint velocity limits are passed to MoveIt2 as
+  hints (e.g., `JointConstraint` velocity fields or velocity scaling per joint). No goal
+  rejection in `_goal_callback` for velocity limits — PILZ respects velocity limits from
+  the robot model by default; this overrides on a per-joint basis.
+- **Default:** `[]` (empty) means unconstrained — same sentinel pattern as joint position arrays.
+- **Researcher must verify:** the correct MoveIt2/PILZ API field for per-joint velocity
+  overrides in a `MotionSequenceItem` (e.g., `MotionPlanRequest` velocity scaling vs
+  separate constraint type).
 
 ### D-11: ConstraintConfigDTO Location
 New Pydantic model `ConstraintConfigDTO` in `movement_controller/models/constraint_config_dto.py`.
@@ -186,8 +215,8 @@ Validated by Pydantic: arrays same length, x_min ≤ x_max, etc.
 
 ### New Files for Phase 5
 - `movement_controller/models/constraint_config_dto.py` — `ConstraintConfigDTO` (frozen Pydantic v2)
-  Workspace box, joint arrays (names + lower + upper), orientation tolerances,
-  max_cartesian_speed, max_acceleration.
+  Workspace box (±1e9 sentinels), joint arrays (names + lower + upper + max_velocities), orientation
+  tolerances, max_cartesian_speed, max_acceleration.
 
 ### Established Patterns
 - **Parameter declaration:** All parameters declared in `__init__` with `ParameterDescriptor`.
@@ -198,8 +227,8 @@ Validated by Pydantic: arrays same length, x_min ≤ x_max, etc.
 - **BSD-3-Clause header:** Required on all new source files.
 
 ### Integration Points
-- `URMovementController.__init__` → add ~14 new `declare_parameter()` calls in the
-  `# region: parameters` block.
+- `URMovementController.__init__` → add ~15 new `declare_parameter()` calls in the
+  `# region: parameters` block (including `constraints.joint.max_velocities`).
 - `URMovementController.on_configure` → after `PilzPlannerService` init, read constraint
   params, build `ConstraintConfigDTO`, call `planner_service.set_constraints(dto)`.
 - `URMovementController._goal_callback` → add per-path speed/acceleration validation loop
@@ -219,7 +248,11 @@ Validated by Pydantic: arrays same length, x_min ≤ x_max, etc.
   `tool0`. This makes it more flexible and correct for multi-tool setups even within v1.
 - Per-path `cartesian_speed` is a genuine execution speed input to PILZ (not just a
   validation value). Researcher must confirm which PILZ API field to set.
-- Default values for workspace bounds should use Python's `float('inf')` / `float('-inf')`
-  — ROS2 parameter `float64` type supports these. Verify this is handled in Pydantic
-  `ConstraintConfigDTO` with appropriate validators.
+- Workspace bound defaults use large float sentinels (±1e9) not `float('inf')` —
+  ROS2 float64 parameters do not support Python infinity.
+- `constraints.joint.max_velocities` is a new per-joint velocity limit array added in
+  the update discussion — shares `constraints.joint.names` for joint identification;
+  all four joint arrays must have matching lengths when any is non-empty.
+- Researcher must verify the correct PILZ/MoveIt2 API for per-joint velocity overrides
+  in `MotionSequenceItem` (D-13 open research item).
 </specifics>

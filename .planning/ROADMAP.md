@@ -95,15 +95,16 @@ Plans:
 
 **Goal:** Persistent motion constraints loaded from node parameters, applied to every planning request.
 
-**Covers:** CON-01, CON-02, CON-03, CON-04
+**Covers:** CON-01, CON-02, CON-03, CON-04, CON-05, CON-06
 
-### Plans
+**Plans:** 5 plans
 
-1. **Parameter declarations** — Declare all constraint parameters with `ParameterDescriptor` descriptions; read on `on_configure`; validate with Pydantic `ConstraintConfigDTO`
-2. **Workspace bounding-box constraint** — Convert bounding-box parameters to MoveIt2 `PositionConstraint` applied to `tool0`; attach to all planning requests
-3. **Joint constraints** — Convert per-joint parameter values to MoveIt2 `JointConstraint` objects; attach to all planning requests
-4. **Orientation constraint** — Convert orientation tolerance parameters to MoveIt2 `OrientationConstraint` for the end-effector; attach to all planning requests
-5. **Constraint tests** — Unit test that each constraint type is correctly built from parameters; integration test that planning fails when a goal violates the workspace bounding box
+Plans:
+- [ ] 05-01-PLAN.md — ConstraintConfigDTO + 15 parameter declarations + on_configure wiring + PilzPlannerService set_constraints stub
+- [ ] 05-02-PLAN.md — _build_path_constraints + _merge_circ_and_path_constraints + _generate_motion_sequence_request updates + velocity warning
+- [ ] 05-03-PLAN.md — Speed/acceleration cap enforcement in _goal_callback (CON-05)
+- [ ] 05-04-PLAN.md — Unit tests: test_constraint_config_dto.py (new) + extensions to test_ur_movement_controller.py and test_pilz_planner_service.py
+- [ ] 05-05-PLAN.md — Integration test: workspace bounding-box violation causes planning failure (CON-01)
 
 **Success criteria:**
 - Node fails to plan a goal that violates any active constraint

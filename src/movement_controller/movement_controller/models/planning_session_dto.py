@@ -33,32 +33,33 @@ from typing import TYPE_CHECKING
 from pydantic import BaseModel, ConfigDict, Field
 
 if TYPE_CHECKING:
-    from moveit_msgs.msg import MotionSequenceResponse
+    from moveit_msgs.msg import RobotState
+
+from movement_controller.models.trajectory_path_dto import TrajectoryPathDTO
 
 
-class PlanResultDTO(BaseModel):
-    """Internal immutable result returned by PilzPlannerService.plan().
-
-    Uses ``arbitrary_types_allowed=True`` so that a ``RobotTrajectory`` instance
-    (a non-Pydantic C++ extension type) can be stored in the ``trajectory`` field.
+class PlanningSessionDTO(BaseModel):
+    """Internal mutable data object to keep track of dynamic data/state during a planning session.
     """
 
-    model_config = ConfigDict(arbitrary_types_allowed=True, frozen=True)
+    model_config = ConfigDict(arbitrary_types_allowed=True, frozen=False)
 
-    success: bool = Field(description='True if PILZ planning succeeded')
-    error_message: str = Field(
-        default='',
-        description='Human-readable error; empty on success',
-    )
-    motion_plan: MotionSequenceResponse | None = Field(
-        default=None,
-        description='Full MotionSequenceResponse from PILZ; empty on failure',
-    )
-    path_ids: list[str] = Field(
+    groups: list[list[TrajectoryPathDTO]] = Field(
+        description='Groups of trajectory paths for the planning session',
         default_factory=list,
-        description='path IDs this result covers, in execution order; populated by plan_all(), empty in plan() results',
     )
-    blended: bool = Field(
-        default=False,
-        description='True if this group has more than one path (blend group); False for size-1 groups',
+    current_group: list[TrajectoryPathDTO] = Field(
+        description='The current group of trajectory paths being planned/executed',
+        default_factory=list,
     )
+    last_predicted_state: RobotState | None = Field(
+        description='The last predicted RobotState after executing a planned trajectory; used as the start state for the next plan',
+        default=None,
+    )
+
+    def get_next_group(self) -> list[TrajectoryPathDTO] | None:
+        """Get the next group of TrajectoryPathDTOs to plan/execute, or None if all groups are done."""
+        if self.groups:
+            self.current_group = self.groups.pop(0)
+            return self.current_group
+        return None

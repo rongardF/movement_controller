@@ -28,5 +28,6 @@
 from movement_controller.models.trajectory_path_dto import TrajectoryPathDTO
 from movement_controller.models.trajectory_goal_dto import TrajectoryGoalDTO
 from movement_controller.models.plan_result_dto import PlanResultDTO
+from movement_controller.models.planning_session_dto import PlanningSessionDTO
 
-__all__ = ['TrajectoryPathDTO', 'TrajectoryGoalDTO']
+__all__ = ['TrajectoryPathDTO', 'TrajectoryGoalDTO', 'PlanResultDTO', 'PlanningSessionDTO']

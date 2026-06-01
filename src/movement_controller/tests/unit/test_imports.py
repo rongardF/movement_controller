@@ -56,3 +56,4 @@ def test_python_subpackages_importable():
     from movement_controller import enums  # noqa: F401
     from movement_controller import utils  # noqa: F401
     from movement_controller import services  # noqa: F401
+    from movement_controller import exceptions  # noqa: F401

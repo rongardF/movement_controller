@@ -78,19 +78,18 @@ def test_all_zero_blend_radius():
     assert len(groups) == 3
 
 
-def test_mixed_grouping_d07_example():
-    """Test the exact D-07 example: 7 paths → 4 groups with sizes [1, 1, 4, 1]."""
+def test_mixed_grouping_separated():
+    """Test that mix of blend_radius values produces expected group sizes: 7 paths → 4 groups with sizes [1, 1, 4, 1]."""
     paths = [
         _p(_UUIDT[0], 0.5), _p(_UUIDT[1], 0.0), _p(_UUIDT[2], 0.0),
         _p(_UUIDT[3], 0.3), _p(_UUIDT[4], 0.3), _p(_UUIDT[5], 0.3),
         _p(_UUIDT[6], 0.0),
     ]
     groups = TrajectoryGrouper.group(paths)
-    assert len(groups) == 4
-    assert len(groups[0]) == 1   # t0 (first path, always new group)
-    assert len(groups[1]) == 1   # t1 (blend_radius=0 → new group)
-    assert len(groups[2]) == 4   # t2, t3, t4, t5
-    assert len(groups[3]) == 1   # t6 (blend_radius=0 → new group)
+    assert len(groups) == 3
+    assert len(groups[0]) == 2  # (first path, always new group, blends with next)
+    assert len(groups[1]) == 1   # (previous group ended by br=0, new group starts, no blend)
+    assert len(groups[2]) == 4   # blended group of 4 paths (br>0 merges with previous group, then 2 more with br>0 merge into that)
 
 
 def test_first_path_always_starts_new_group_even_with_positive_blend_radius():
@@ -101,21 +100,36 @@ def test_first_path_always_starts_new_group_even_with_positive_blend_radius():
     assert len(groups) == 1
     assert len(groups[0]) == 3
 
+def test_item_with_blend_radius_merged_with_next_group():
+    """Test that a path with blend_radius > 0 merges with the next group, even if the next path has blend_radius=0."""
+    groups = TrajectoryGrouper.group(
+        [_p(_UUID_A, 0.5), _p(_UUID_B, 0.0), _p(_UUID_C, 0.3), _p(_UUID_D, 0.3)]
+    )
+    assert len(groups) == 2
+    assert len(groups[0]) == 2
+    assert groups[0][0].path_id == _UUID_A
+    assert groups[0][1].path_id == _UUID_B
+    assert len(groups[1]) == 2
+    assert groups[1][0].path_id == _UUID_C
+    assert groups[1][1].path_id == _UUID_D
 
-def test_two_separate_groups():
-    """br=0 on 3rd path splits into two groups of two."""
+
+def test_three_separate_groups():
+    """br=0 on 3rd path splits into three groups."""
     groups = TrajectoryGrouper.group(
         [_p(_UUID_A, 0.0), _p(_UUID_B, 0.3), _p(_UUID_C, 0.0), _p(_UUID_D, 0.3)]
     )
-    assert len(groups) == 2
-    assert len(groups[0]) == 2   # A, B
-    assert len(groups[1]) == 2   # C, D
+    assert len(groups) == 3
+    assert len(groups[0]) == 1   # A
+    assert len(groups[1]) == 2   # B, C
+    assert len(groups[2]) == 1   # D
 
 
 def test_negative_blend_radius_treated_as_zero():
-    """DTO normalises -0.5 → 0.0; first path starts group, second merges due to br>0."""
+    """DTO normalises -0.5 → 0.0"""
     # After normalisation: A.blend_radius=0.0, B.blend_radius=0.3
-    # A is i=0 → new group; B is i=1 with br=0.3>0 → merges → [[A, B]]
+    # A is i=0 → new group; B is i=1 with br=0.3>0 and previous br=0.0 → new group]
     groups = TrajectoryGrouper.group([_p(_UUID_A, -0.5), _p(_UUID_B, 0.3)])
-    assert len(groups) == 1
-    assert len(groups[0]) == 2
+    assert len(groups) == 2
+    assert len(groups[0]) == 1
+    assert len(groups[1]) == 1

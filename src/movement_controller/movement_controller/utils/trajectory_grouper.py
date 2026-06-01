@@ -36,9 +36,9 @@ class TrajectoryGrouper:
     def group(paths: list[TrajectoryPathDTO]) -> list[list[TrajectoryPathDTO]]:
         """Group trajectory paths into blended execution groups.
 
-        Algorithm (D-07):
-        - The first path always starts a new group.
-        - Any subsequent path with blend_radius > 0 is merged into the current group.
+        Algorithm:
+        - First path with blend_radius >= 0 starts a new group, subsequent paths with
+          blend_radius > 0 are grouped with the previous group.
         - Any subsequent path with blend_radius <= 0 starts a new group.
 
         Args:
@@ -57,7 +57,13 @@ class TrajectoryGrouper:
         # Grouping loop
         groups: list[list[TrajectoryPathDTO]] = []
         for i, path in enumerate(paths):
-            if i == 0 or path.blend_radius <= 0:
+            if i == 0:
+                groups.append([path])
+            elif path.blend_radius <= 0 and groups[-1][-1].blend_radius > 0:
+                groups[-1].append(path)
+            elif path.blend_radius <= 0 and groups[-1][-1].blend_radius <= 0:
+                groups.append([path])
+            elif path.blend_radius > 0 and groups[-1][-1].blend_radius <= 0:
                 groups.append([path])
             else:
                 groups[-1].append(path)

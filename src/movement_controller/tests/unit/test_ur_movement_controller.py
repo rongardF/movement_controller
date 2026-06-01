@@ -26,16 +26,29 @@
 # POSSIBILITY OF SUCH DAMAGE.
 """Unit tests for URMovementController lifecycle and action server callbacks."""
 
-import asyncio
 from unittest.mock import MagicMock, patch
 
 import pytest
 import rclpy
+from rclpy.action import ActionClient, ActionServer, GoalResponse, CancelResponse
+from rclpy.action.server import ServerGoalHandle
+from rclpy.action.client import CancelGoal
+from rclpy.lifecycle.node import TransitionCallbackReturn, LifecycleState
 from geometry_msgs.msg import Point, PoseStamped
-from rclpy.action import GoalResponse
+from moveit_msgs.msg import MoveItErrorCodes, MotionSequenceResponse, RobotTrajectory
+from moveit_msgs.action import (
+    ExecuteTrajectory as MoveItExecuteTrajectory,
+    ExecuteTrajectory_GetResult_Response as MoveItExecuteTrajectoryResponse,
+)
+from movement_controller.msg import TrajectoryPath
+from movement_controller.action import ExecuteTrajectory
 
-from movement_controller.models.plan_result_dto import PlanResultDTO
+from movement_controller.models import PlanResultDTO, TrajectoryGoalDTO
+from movement_controller.services import PilzPlannerService
 from movement_controller.ur_movement_controller import URMovementController
+
+# Resolve TYPE_CHECKING forward reference so Pydantic can instantiate PlanResultDTO in tests.
+PlanResultDTO.model_rebuild(_types_namespace={'MotionSequenceResponse': object})
 
 # Predefined valid UUID4 values for deterministic tests.
 _UUID1 = '00000000-0000-4000-8000-000000000001'
@@ -60,7 +73,7 @@ def node(ros_context):
 
 def _make_ros_goal(path_id=_UUID1, motion_type='LIN'):
     """Build a mock ExecuteTrajectory.Goal with a single fully-populated path."""
-    mock_path = MagicMock()
+    mock_path = MagicMock(spec=TrajectoryPath)
     mock_path.path_id = path_id
     mock_path.motion_type = motion_type
     mock_path.blend_radius = 0.0
@@ -70,71 +83,13 @@ def _make_ros_goal(path_id=_UUID1, motion_type='LIN'):
     mock_path.acceleration = 0.0
     mock_path.tool_frame = ''
     mock_path.circ_type = 'interim'
-    goal = MagicMock()
+    goal = MagicMock(spec=ExecuteTrajectory.Goal)
     goal.paths = [mock_path]
     return goal
 
-
-def test_goal_rejected_when_not_active(node):
-    """Goal is rejected when _is_active is False (default for a new node)."""
-    assert node._is_active is False
-    result = node._goal_callback(_make_ros_goal())
-    assert result == GoalResponse.REJECT
-
-
-def test_goal_rejected_when_executing(node):
-    """Goal is rejected when another goal is already executing."""
-    node._is_active = True
-    node._is_executing = True
-    try:
-        result = node._goal_callback(_make_ros_goal())
-        assert result == GoalResponse.REJECT
-    finally:
-        node._is_executing = False
-
-
-def test_goal_rejected_empty_paths(node):
-    """Goal is rejected when the paths list is empty."""
-    node._is_active = True
-    goal = MagicMock()
-    goal.paths = []
-    result = node._goal_callback(goal)
-    assert result == GoalResponse.REJECT
-
-
-def test_goal_rejected_empty_path_id(node):
-    """Goal is rejected when a path has an empty path_id."""
-    node._is_active = True
-    result = node._goal_callback(_make_ros_goal(path_id=''))
-    assert result == GoalResponse.REJECT
-
-
-def test_goal_rejected_invalid_uuid4_path_id(node):
-    """Goal is rejected when a path_id is not a valid UUID4 string."""
-    node._is_active = True
-    result = node._goal_callback(_make_ros_goal(path_id='not-a-uuid'))
-    assert result == GoalResponse.REJECT
-
-
-def test_goal_rejected_invalid_motion_type(node):
-    """Goal is rejected when motion_type is not a valid MotionTypeEnum value."""
-    node._is_active = True
-    result = node._goal_callback(_make_ros_goal(motion_type='JUMP'))
-    assert result == GoalResponse.REJECT
-
-
-def test_goal_accepted_when_active_valid(node):
-    """Goal is accepted when node is active, not executing, and goal is valid."""
-    node._is_active = True
-    node._is_executing = False
-    result = node._goal_callback(_make_ros_goal())
-    assert result == GoalResponse.ACCEPT
-    node._is_executing = False  # reset after test
-
-
 def _make_path_msg(path_id: str, blend_radius: float = 0.0) -> MagicMock:
     """Build a mock TrajectoryPath message with all fields populated."""
-    m = MagicMock()
+    m = MagicMock(spec=TrajectoryPath)
     m.path_id = path_id
     m.motion_type = 'LIN'
     m.blend_radius = blend_radius
@@ -147,54 +102,130 @@ def _make_path_msg(path_id: str, blend_radius: float = 0.0) -> MagicMock:
     return m
 
 
-def _make_mock_moveit_with_tem():
-    """Build a mock MoveItPy with all TEM and scene monitor hooks Phase 4 needs."""
-    mock_moveit = MagicMock()
-    mock_tem = MagicMock()
-    mock_tem.push = MagicMock()
-    mock_tem.execute_and_wait = MagicMock(return_value=None)
-    mock_moveit.get_trajectory_execution_manager.return_value = mock_tem
-    mock_moveit.get_robot_model.return_value = MagicMock()
-    mock_scene_ctx = MagicMock()
-    mock_scene_ctx.__enter__ = MagicMock(return_value=MagicMock(current_state=MagicMock()))
-    mock_scene_ctx.__exit__ = MagicMock(return_value=False)
-    mock_moveit.get_planning_scene_monitor.return_value.read_only.return_value = mock_scene_ctx
-    return mock_moveit
+def _make_mock_exec_client(success: bool = True):
+    """Build a mock ActionClient for /move_group/execute_trajectory.
+
+    Returns a client whose send_goal() returns a GetResult.Response-shaped mock:
+    ``result.result.error_code.val`` is the integer error code, matching the real
+    rclpy ActionClient.send_goal() return type.
+    """
+    mock_result = MoveItExecuteTrajectoryResponse(
+        status=4 if success else 3,  # 4=SUCCEEDED, 3=ABORTED
+        result=MagicMock(spec=MoveItExecuteTrajectory.Result),
+    )
+    mock_result.result.error_code.val = (
+        MoveItErrorCodes.SUCCESS if success else MoveItErrorCodes.FAILURE
+    )
+    mock_client = MagicMock(spec=ActionClient)
+    mock_client.wait_for_server.return_value = True
+    mock_client.send_goal.return_value = mock_result
+    return mock_client
+
+
+def _make_plan_result_dto(path_ids: list, success: bool = True, error_message: str = ''):
+    """Build a PlanResultDTO with a mock motion_plan for use in execute_callback tests.
+
+    Successful DTOs include a mock MotionSequenceResponse with one planned trajectory
+    so that the execution loop can iterate over planned_trajectories.
+    """
+    if success:
+        mock_plan = MagicMock(spec=MotionSequenceResponse)
+        mock_plan.planned_trajectories = [MagicMock(spec=RobotTrajectory)]
+    else:
+        mock_plan = None
+    return PlanResultDTO(
+        success=success,
+        path_ids=path_ids,
+        blended=False,
+        motion_plan=mock_plan,
+        error_message=error_message,
+    )
 
 
 def _make_mock_planner_with_results(plan_results: list):
     """Build a mock PilzPlannerService that yields the given PlanResultDTOs."""
-    mock_planner = MagicMock()
-    mock_planner.plan_all = MagicMock()
-    mock_planner.cancel = MagicMock()
+    mock_planner = MagicMock(spec=PilzPlannerService)
+    mock_planner.plan_all.return_value = True
     mock_planner.iterate_planned_trajectories = MagicMock(return_value=iter(plan_results))
     return mock_planner
 
+# region: goal execution
+def test_execute_aborts_when_planner_not_configured(node):
+    """_execute_callback aborts and returns success=False when _planner_service is None."""
+    assert node._planner_service is None
+    mock_goal_handle = MagicMock(spec=ServerGoalHandle)
+    mock_goal_handle.is_cancel_requested = False
+    mock_goal_handle.request.paths = [_make_path_msg(_UUID1)]
+
+    result = node._execute_callback(mock_goal_handle)
+
+    assert result.success is False
+    assert result.error_message != ''
+    mock_goal_handle.abort.assert_called_once()
+
+
+def test_goal_rejected_when_executing(node):
+    """Goal is rejected when another goal is already executing."""
+    node._is_executing = True
+    try:
+        result = node._goal_callback(_make_ros_goal())
+        assert result == GoalResponse.REJECT
+    finally:
+        node._is_executing = False
+
+
+def test_goal_rejected_empty_paths(node):
+    """Goal is rejected when the paths list is empty."""
+    goal = MagicMock(spec=ExecuteTrajectory.Goal)
+    goal.paths = []
+    result = node._goal_callback(goal)
+    assert result == GoalResponse.REJECT
+
+
+def test_goal_rejected_empty_path_id(node):
+    """Goal is rejected when a path has an empty path_id."""
+    result = node._goal_callback(_make_ros_goal(path_id=''))
+    assert result == GoalResponse.REJECT
+
+
+def test_goal_rejected_invalid_uuid4_path_id(node):
+    """Goal is rejected when a path_id is not a valid UUID4 string."""
+    result = node._goal_callback(_make_ros_goal(path_id='not-a-uuid'))
+    assert result == GoalResponse.REJECT
+
+
+def test_goal_rejected_invalid_motion_type(node):
+    """Goal is rejected when motion_type is not a valid MotionTypeEnum value."""
+    result = node._goal_callback(_make_ros_goal(motion_type='JUMP'))
+    assert result == GoalResponse.REJECT
+
+
+def test_goal_accepted_when_active_valid(node):
+    """Goal is accepted when node is active, not executing, and goal is valid."""
+    node._is_executing = False
+    result = node._goal_callback(_make_ros_goal())
+    assert result == GoalResponse.ACCEPT
+    node._is_executing = False  # reset after test
 
 def test_execute_callback_stub_feedback_sequence(node):
     """Two paths (br=0.0 each) → 2 groups → 4 feedback messages (executing+completed per group)."""
-    dto1 = PlanResultDTO(success=True, path_ids=[_UUID1], blended=False, trajectories=[MagicMock()])
-    dto2 = PlanResultDTO(success=True, path_ids=[_UUID2], blended=False, trajectories=[MagicMock()])
+    dto1 = _make_plan_result_dto([_UUID1])
+    dto2 = _make_plan_result_dto([_UUID2])
 
     node._planner_service = _make_mock_planner_with_results([dto1, dto2])
-    node._moveit = _make_mock_moveit_with_tem()
+    node._execute_trajectory_client = _make_mock_exec_client(success=True)
 
-    node._is_active = True
-    mock_goal_handle = MagicMock()
+    mock_goal_handle = MagicMock(spec=ServerGoalHandle)
     mock_goal_handle.is_cancel_requested = False
     mock_goal_handle.request.paths = [
         _make_path_msg(_UUID1, 0.0),
         _make_path_msg(_UUID2, 0.0),
     ]
-    mock_goal_handle.publish_feedback = MagicMock()
-    mock_goal_handle.succeed = MagicMock()
 
-    with patch('movement_controller.ur_movement_controller.RobotTrajectory') as mock_rt:
-        mock_rt.return_value = MagicMock()
-        result = asyncio.run(node._execute_callback(mock_goal_handle))
+    result = node._execute_callback(mock_goal_handle)
 
     node._planner_service = None
-    node._moveit = None
+    node._execute_trajectory_client = None
 
     assert result.success is True
     assert mock_goal_handle.publish_feedback.call_count == 4
@@ -204,50 +235,220 @@ def test_execute_callback_stub_feedback_sequence(node):
 
 def test_execute_callback_clears_is_executing_after_success(node):
     """_is_executing must be False after a successful callback run."""
-    dto = PlanResultDTO(success=True, path_ids=[_UUID1], blended=False, trajectories=[MagicMock()])
+    dto = _make_plan_result_dto([_UUID1])
     node._planner_service = _make_mock_planner_with_results([dto])
-    node._moveit = _make_mock_moveit_with_tem()
+    node._execute_trajectory_client = _make_mock_exec_client(success=True)
 
-    node._is_active = True
     node._is_executing = True  # simulate _goal_callback having set it
-    mock_goal_handle = MagicMock()
+    mock_goal_handle = MagicMock(spec=ServerGoalHandle)
     mock_goal_handle.is_cancel_requested = False
     mock_goal_handle.request.paths = [_make_path_msg(_UUID1, 0.0)]
-    mock_goal_handle.publish_feedback = MagicMock()
-    mock_goal_handle.succeed = MagicMock()
 
-    with patch('movement_controller.ur_movement_controller.RobotTrajectory') as mock_rt:
-        mock_rt.return_value = MagicMock()
-        asyncio.run(node._execute_callback(mock_goal_handle))
+    node._execute_callback(mock_goal_handle)
 
     node._planner_service = None
-    node._moveit = None
+    node._execute_trajectory_client = None
 
     assert node._is_executing is False
 
 
 def test_execute_callback_clears_is_executing_after_failure(node):
     """_is_executing must be False even when planning fails."""
-    dto = PlanResultDTO(success=False, path_ids=[_UUID1], error_message='planning failed')
+    dto = _make_plan_result_dto([_UUID1], success=False, error_message='planning failed')
     node._planner_service = _make_mock_planner_with_results([dto])
-    node._moveit = _make_mock_moveit_with_tem()
+    node._execute_trajectory_client = _make_mock_exec_client(success=True)
 
-    node._is_active = True
     node._is_executing = True  # simulate _goal_callback having set it
-    mock_goal_handle = MagicMock()
+    mock_goal_handle = MagicMock(spec=ServerGoalHandle)
     mock_goal_handle.is_cancel_requested = False
     mock_goal_handle.request.paths = [_make_path_msg(_UUID1, 0.0)]
-    mock_goal_handle.publish_feedback = MagicMock()
-    mock_goal_handle.succeed = MagicMock()
-    mock_goal_handle.abort = MagicMock()
 
-    with patch('movement_controller.ur_movement_controller.RobotTrajectory') as mock_rt:
-        mock_rt.return_value = MagicMock()
-        result = asyncio.run(node._execute_callback(mock_goal_handle))
+    result = node._execute_callback(mock_goal_handle)
 
     node._planner_service = None
-    node._moveit = None
+    node._execute_trajectory_client = None
 
     assert node._is_executing is False
     assert result.success is False
     mock_goal_handle.abort.assert_called_once()
+
+# endregion: goal execution
+
+# region: cancel callback
+
+def test_cancel_callback_returns_accept(node):
+    """_cancel_callback() always returns CancelResponse.ACCEPT."""
+    result = node._cancel_callback(MagicMock(spec=CancelGoal.Request))
+    assert result == CancelResponse.ACCEPT
+
+
+def test_cancel_callback_calls_planner_cancel_when_configured(node):
+    """_cancel_callback() calls planner.cancel() when a planner service is set."""
+    mock_planner = MagicMock(spec=PilzPlannerService)
+    node._planner_service = mock_planner
+
+    result = node._cancel_callback(MagicMock(spec=CancelGoal.Request))
+
+    mock_planner.cancel.assert_called_once()
+    assert result == CancelResponse.ACCEPT
+    node._planner_service = None
+
+
+def test_cancel_callback_safe_when_planner_not_configured(node):
+    """_cancel_callback() does not raise and still returns ACCEPT when _planner_service is None."""
+    assert node._planner_service is None
+    result = node._cancel_callback(MagicMock(spec=CancelGoal.Request))
+    assert result == CancelResponse.ACCEPT
+
+# endregion: cancel callback
+
+# region: lifecycle node callbacks
+def test_on_configure_creates_planner_service(node):
+    """on_configure() instantiates PilzPlannerService and stores it on the node."""
+    assert node._planner_service is None
+    mock_state = LifecycleState(label='unconfigured', state_id=0)
+
+    with patch(
+        'movement_controller.ur_movement_controller.PilzPlannerService',
+        return_value=MagicMock(spec=PilzPlannerService),
+    ):
+        result = node.on_configure(mock_state)
+
+    assert result == TransitionCallbackReturn.SUCCESS
+    assert node._planner_service is not None
+    node._planner_service = None  # reset
+
+
+def test_on_configure_uses_moveit_group_name_parameter(node):
+    """on_configure() passes the moveit_group_name parameter value to PilzPlannerService."""
+    mock_state = LifecycleState(label='unconfigured', state_id=0)
+
+    with patch(
+        'movement_controller.ur_movement_controller.PilzPlannerService',
+    ) as patched_cls:
+        patched_cls.return_value = MagicMock(spec=PilzPlannerService)
+        node.on_configure(mock_state)
+        _, kwargs = patched_cls.call_args
+        assert kwargs.get('moveit_group_name') == 'ur_manipulator'
+
+    node._planner_service = None  # reset
+
+
+def test_on_activate_returns_failure_when_planner_not_configured(node):
+    """on_activate() returns FAILURE when _planner_service is None (not yet configured)."""
+    assert node._planner_service is None
+    mock_state = LifecycleState(label='inactive', state_id=1)
+
+    result = node.on_activate(mock_state)
+
+    assert result == TransitionCallbackReturn.FAILURE
+
+
+def test_on_activate_returns_failure_when_service_unavailable(node):
+    """on_activate() returns FAILURE when wait_for_service times out."""
+    mock_planner = MagicMock(spec=PilzPlannerService)
+    mock_planner.wait_for_service.return_value = False
+    node._planner_service = mock_planner
+    mock_state = LifecycleState(label='inactive', state_id=1)
+
+    result = node.on_activate(mock_state)
+
+    assert result == TransitionCallbackReturn.FAILURE
+    mock_planner.on_activate.assert_called_once()
+    mock_planner.wait_for_service.assert_called_once()
+    node._planner_service = None  # reset
+
+
+def test_on_activate_calls_planner_on_activate_and_wait_for_service(node):
+    """on_activate() calls planner.on_activate() then planner.wait_for_service()."""
+    mock_planner = MagicMock(spec=PilzPlannerService)
+    mock_planner.wait_for_service.return_value = True
+    node._planner_service = mock_planner
+    mock_state = LifecycleState(label='inactive', state_id=1)
+
+    with patch('movement_controller.ur_movement_controller.ActionServer'), \
+         patch('movement_controller.ur_movement_controller.ActionClient'):
+        result = node.on_activate(mock_state)
+
+    mock_planner.on_activate.assert_called_once()
+    mock_planner.wait_for_service.assert_called_once()
+    assert result == TransitionCallbackReturn.SUCCESS
+    # Cleanup references set inside on_activate
+    node._action_server = None
+    node._execute_trajectory_client = None
+    node._planner_service = None
+
+
+def test_on_deactivate_cancels_and_deactivates_planner(node):
+    """on_deactivate() calls planner.cancel() then planner.on_deactivate()."""
+    mock_planner = MagicMock(spec=PilzPlannerService)
+    node._planner_service = mock_planner
+    node._is_executing = True
+    mock_state = LifecycleState(label='active', state_id=2)
+
+    result = node.on_deactivate(mock_state)
+
+
+    assert result == TransitionCallbackReturn.SUCCESS
+    assert node._is_executing is False
+    assert node._trajectory_goal is None
+    node._planner_service = None
+
+
+def test_on_deactivate_destroys_action_server(node):
+    """on_deactivate() destroys the action server and clears the reference."""
+    mock_action_server = MagicMock(spec=ActionServer)
+    node._action_server = mock_action_server
+    mock_state = LifecycleState(label='active', state_id=2)
+
+    node.on_deactivate(mock_state)
+
+    mock_action_server.destroy.assert_called_once()
+    assert node._action_server is None
+
+
+def test_on_deactivate_destroys_execute_trajectory_client(node):
+    """on_deactivate() destroys the execute trajectory client and clears the reference."""
+    mock_client = MagicMock(spec=ActionClient)
+    node._execute_trajectory_client = mock_client
+    mock_state = LifecycleState(label='active', state_id=2)
+
+    node.on_deactivate(mock_state)
+
+    mock_client.destroy.assert_called_once()
+    assert node._execute_trajectory_client is None
+
+
+def test_on_cleanup_clears_planner_service(node):
+    """on_cleanup() sets _planner_service to None."""
+    node._planner_service = MagicMock(spec=PilzPlannerService)
+    mock_state = LifecycleState(label='inactive', state_id=1)
+
+    result = node.on_cleanup(mock_state)
+
+    assert result == TransitionCallbackReturn.SUCCESS
+    assert node._planner_service is None
+
+
+def test_on_cleanup_clears_trajectory_goal(node):
+    """on_cleanup() sets _trajectory_goal to None."""
+    node._trajectory_goal = MagicMock(spec=TrajectoryGoalDTO)
+    mock_state = LifecycleState(label='inactive', state_id=1)
+
+    node.on_cleanup(mock_state)
+
+    assert node._trajectory_goal is None
+
+
+def test_on_deactivate_is_idempotent_when_resources_are_none(node):
+    """on_deactivate() succeeds gracefully when all resources are already None."""
+    assert node._planner_service is None
+    assert node._action_server is None
+    assert node._execute_trajectory_client is None
+    mock_state = LifecycleState(label='active', state_id=2)
+
+    result = node.on_deactivate(mock_state)
+
+    assert result == TransitionCallbackReturn.SUCCESS
+
+# endregion: lifecycle node callbacks

@@ -24,23 +24,49 @@
 # CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
 # ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 # POSSIBILITY OF SUCH DAMAGE.
-"""Unit tests for PilzPlannerService — all MoveItPy dependencies mocked."""
+"""Unit tests for PilzPlannerService — all ROS 2 service dependencies mocked."""
 
-import threading
-import time
-from unittest.mock import MagicMock, call, patch
+from queue import Queue
+from threading import Thread, Event
+from time import sleep
+from typing import Tuple
+from unittest.mock import MagicMock
 
 import pytest
-from geometry_msgs.msg import Point, PoseStamped
+from rclpy.lifecycle import LifecycleNode
+from rclpy.impl.rcutils_logger import RcutilsLogger
+from rclpy.client import Client
+from geometry_msgs.msg import PoseStamped
+from moveit_msgs.msg import RobotState
 
-from movement_controller.enums.circ_type_enum import CircTypeEnum
+from moveit_msgs.msg import (
+    MoveItErrorCodes,
+    RobotState,
+    RobotTrajectory
+)
+from moveit_msgs.action import MoveGroupSequence
+from moveit_msgs.srv import GetPlanningScene
+from trajectory_msgs.msg import JointTrajectoryPoint
+
 from movement_controller.enums.motion_type_enum import MotionTypeEnum
+from movement_controller.exceptions.abort_planning_error import AbortPlanningError
+from movement_controller.exceptions.not_initialized_error import NotInitializedError
 from movement_controller.models.plan_result_dto import PlanResultDTO
+from movement_controller.models.planning_session_dto import PlanningSessionDTO
 from movement_controller.models.trajectory_path_dto import TrajectoryPathDTO
 from movement_controller.services.pilz_planner_service import PilzPlannerService
 
+
+# Resolve TYPE_CHECKING-only forward references so Pydantic can instantiate these models in tests.
+# Use 'MagicMock' as the resolved type so it is accepted by the validator.
+PlanResultDTO.model_rebuild(_types_namespace={'MotionSequenceResponse': MagicMock})
+PlanningSessionDTO.model_rebuild(_types_namespace={'RobotState': MagicMock})
+
 _UUID = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'
 _UUID2 = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb'
+
+_SEQ_SRV = '/move_group/plan_sequence_path'
+_SCENE_SRV = '/move_group/get_planning_scene'
 
 
 def _make_path_dto(**overrides) -> TrajectoryPathDTO:
@@ -53,266 +79,207 @@ def _make_path_dto(**overrides) -> TrajectoryPathDTO:
     return TrajectoryPathDTO(**{**defaults, **overrides})
 
 
-@pytest.fixture
-def mock_plan_result():
-    """A truthy plan result with a mock trajectory."""
-    mr = MagicMock()
-    mr.__bool__ = MagicMock(return_value=True)
-    mr.trajectory = MagicMock()
-    return mr
+def _make_sync_future(response):
+    """Return a mock ROS future that invokes add_done_callback synchronously."""
+    future = MagicMock()
+    future.result.return_value = response
+
+    def add_done_callback(cb):
+        cb(future)
+
+    future.add_done_callback = add_done_callback
+    return future
 
 
-@pytest.fixture
-def mock_planning_component(mock_plan_result):
-    """Mock PlanningComponent whose plan() returns a truthy result by default."""
-    pc = MagicMock()
-    pc.plan.return_value = mock_plan_result
-    return pc
+def _make_default_seq_response():
+    """Build a default successful GetMotionSequence response mock."""
+    resp = MagicMock(spec=MoveGroupSequence.Result)
+    resp.response.error_code.val = MoveItErrorCodes.SUCCESS
+    mock_traj = MagicMock(spec=RobotTrajectory)
+    mock_traj.joint_trajectory.joint_names = ['joint_1']
+    joint_traj_point = MagicMock(spec=JointTrajectoryPoint)
+    joint_traj_point.positions = [0.0]
+    mock_traj.joint_trajectory.points = [joint_traj_point]
+    resp.response.planned_trajectories = [mock_traj]
+    return resp
 
 
-@pytest.fixture
-def mock_moveit():
-    """Mock MoveItPy instance."""
-    return MagicMock()
+def _make_default_scene_response():
+    """Build a default successful GetPlanningScene response mock."""
+    resp = MagicMock(spec=GetPlanningScene.Response)
+    resp.scene.robot_state = MagicMock(spec=RobotState)
+    return resp
 
 
-@pytest.fixture
-def mock_node():
-    n = MagicMock()
-    n.create_client.return_value = MagicMock()
-    return n
+def _build_service(
+    seq_response=None,
+    scene_response=None,
+    scene_available=True,
+    seq_available=True
+) -> Tuple[PilzPlannerService, MagicMock, MagicMock]:
+    """Build an activated PilzPlannerService backed by synchronous mock service clients.
 
-
-@pytest.fixture
-def service(mock_moveit, mock_planning_component, mock_node):
-    """PilzPlannerService with injected mocks.
-
-    Wires mock_moveit.get_planning_component to return mock_planning_component so
-    that assertions on mock_planning_component still work after the constructor change
-    that now calls get_planning_component(group_name) internally.
+    Sync futures cause the callback chain to execute immediately inside plan_all(),
+    so the queue is fully populated before plan_all() returns.
     """
-    mock_moveit.get_planning_component.return_value = mock_planning_component
-    return PilzPlannerService(mock_moveit, 'ur_manipulator', mock_node)
+    seq_resp = seq_response if seq_response is not None else _make_default_seq_response()
+    scene_resp = scene_response if scene_response is not None else _make_default_scene_response()
+
+    mock_seq_client = MagicMock()
+    mock_seq_client.wait_for_service.return_value = seq_available
+    mock_seq_client.call_async.side_effect = lambda req: _make_sync_future(seq_resp)
+
+    mock_scene_client = MagicMock()
+    mock_scene_client.wait_for_service.return_value = scene_available
+    mock_scene_client.call_async.side_effect = lambda req: _make_sync_future(scene_resp)
+
+    mock_node = MagicMock(spec=LifecycleNode)
+    mock_node.get_logger.return_value = MagicMock(spec=RcutilsLogger)
+
+    def create_client_side_effect(**kwargs):
+        if kwargs.get('srv_name') == _SCENE_SRV:
+            return mock_scene_client
+        return mock_seq_client
+
+    mock_node.create_client.side_effect = create_client_side_effect
+
+    svc = PilzPlannerService(mock_node, 'ur_manipulator')
+    svc.on_activate()
+    return svc, mock_seq_client, mock_scene_client
 
 
-@pytest.fixture(autouse=True)
-def patch_plan_request_params():
-    """Patch PlanRequestParameters so no real MoveItPy constructor is invoked."""
-    with patch(
-        'movement_controller.services.pilz_planner_service.PlanRequestParameters'
-    ) as mock_cls:
-        yield mock_cls
+# region: Constructor and lifecycle tests
+def test_constructor_stores_group_name():
+    """Constructor stores the planning group name for use in service requests."""
+    mock_node = MagicMock(spec=LifecycleNode)
+    mock_node.get_logger.return_value = MagicMock(spec=RcutilsLogger)
+    svc = PilzPlannerService(mock_node, 'ur_manipulator')
+    assert svc._group_name == 'ur_manipulator'
+    mock_node.get_logger.assert_called_once()
 
 
-# region: Success-path tests
+def test_constructor_no_clients_before_activate():
+    """Service clients are NOT created in __init__; they are created in on_activate()."""
+    mock_node = MagicMock(spec=LifecycleNode)
+    mock_node.get_logger.return_value = MagicMock(spec=RcutilsLogger)
+    svc = PilzPlannerService(mock_node, 'ur_manipulator')
+    assert svc._plan_seq_client is None
+    assert svc._scene_monitor_client is None
+    mock_node.create_client.assert_not_called()
+    mock_node.get_logger.assert_called_once()
 
 
-def test_plan_lin_success(service, mock_planning_component, patch_plan_request_params):
-    """LIN path returns PlanResultDTO(success=True) with a non-None trajectory."""
-    path = _make_path_dto(motion_type=MotionTypeEnum.LIN)
+def test_on_activate_creates_clients():
+    """on_activate() creates both service clients via node.create_client."""
+    mock_node = MagicMock(spec=LifecycleNode)
+    mock_node.get_logger.return_value = MagicMock(spec=RcutilsLogger)
+    mock_node.create_client.return_value = MagicMock(spec=Client)
 
-    result = service.plan(path)
+    svc = PilzPlannerService(mock_node, 'ur_manipulator')
+    svc.on_activate()
 
-    assert result.success is True
-    assert result.trajectory is not None
-    mock_planning_component.set_start_state_to_current_state.assert_called_once()
-
-
-def test_plan_ptp_success(service, mock_planning_component, patch_plan_request_params):
-    """PTP path returns success=True; set_goal_state is called with default tool_frame='tool0'."""
-    path = _make_path_dto(motion_type=MotionTypeEnum.PTP)
-
-    result = service.plan(path)
-
-    assert result.success is True
-    mock_planning_component.set_goal_state.assert_called_once_with(
-        pose_stamped_msg=path.target_pose,
-        pose_link='tool0',
-    )
+    assert mock_node.create_client.call_count == 2
+    service_names = [call.kwargs['srv_name'] for call in mock_node.create_client.call_args_list]
+    assert _SEQ_SRV in service_names
+    assert _SCENE_SRV in service_names
+    assert svc._plan_seq_client is not None
+    assert svc._scene_monitor_client is not None
 
 
-def test_plan_circ_success(service, mock_planning_component, patch_plan_request_params):
-    """CIRC path returns success=True; set_path_constraints called with name='interim' then cleared."""
-    path = _make_path_dto(
-        motion_type=MotionTypeEnum.CIRC,
-        circ_type=CircTypeEnum.INTERIM,
-        circ_point=Point(x=0.1, y=0.2, z=0.3),
-    )
+def test_on_deactivate_destroys_clients():
+    """on_deactivate() destroys both service clients and clears the references."""
+    svc, _, _ = _build_service()
+    seq_client = svc._plan_seq_client
+    scene_client = svc._scene_monitor_client
 
-    result = service.plan(path)
+    svc.on_deactivate()
 
-    assert result.success is True
+    svc._node.destroy_client.assert_any_call(seq_client)  # type: ignore
+    svc._node.destroy_client.assert_any_call(scene_client)  # type: ignore
+    assert svc._plan_seq_client is None
+    assert svc._scene_monitor_client is None
 
-    calls = mock_planning_component.set_path_constraints.call_args_list
-    assert len(calls) == 2, f'Expected 2 set_path_constraints calls, got {len(calls)}'
+# endregion: Constructor and lifecycle tests
 
-    # First call: constraints with name='interim'
-    first_constraints = calls[0].args[0]
-    assert first_constraints.name == 'interim', (
-        f'Expected constraints.name="interim", got {first_constraints.name!r}'
-    )
-
-    # Second call: empty Constraints() to clear
-    second_constraints = calls[1].args[0]
-    assert second_constraints.name == '', (
-        f'Expected empty constraints.name for clear call, got {second_constraints.name!r}'
-    )
+# region: wait_for_service tests
+def test_wait_for_service_returns_false_before_activate():
+    """wait_for_service() returns False when called before on_activate() (client is None)."""
+    mock_node = MagicMock(spec=LifecycleNode)
+    mock_node.get_logger.return_value = MagicMock(spec=RcutilsLogger)
+    svc = PilzPlannerService(mock_node, 'ur_manipulator')
+    assert svc.wait_for_service(timeout_sec=1.0) is False
 
 
-def test_plan_uses_pilz_pipeline(service, patch_plan_request_params):
-    """planning_pipeline is set to 'pilz_industrial_motion_planner'."""
+def test_wait_for_service_delegates_to_client():
+    """wait_for_service() delegates to the plan_seq_client with the given timeout."""
+    svc, mock_seq_client, _ = _build_service()
+    mock_seq_client.wait_for_service.return_value = True
+
+    result = svc.wait_for_service(timeout_sec=3.0)
+
+    assert result is True
+    mock_seq_client.wait_for_service.assert_called_with(timeout_sec=3.0)
+
+# endregion: wait_for_service tests
+
+# region: plan_all tests
+def test_plan_all_returns_false_when_scene_service_unavailable():
+    """plan_all() returns False and does not start planning if scene service is unavailable."""
+    svc, _, _ = _build_service(scene_available=False)
+
+    result = svc.plan_all([[_make_path_dto()]])
+
+    assert result is False
+    assert svc._plan_queue is None
+
+
+def test_plan_all_returns_true_and_enqueues_results():
+    """plan_all() returns True and the callback chain populates the queue synchronously."""
+    svc, _, _ = _build_service()
+
+    result = svc.plan_all([[_make_path_dto()]])
+
+    assert result is True
+    assert svc._plan_queue is not None
+    results = list(svc.iterate_planned_trajectories())
+    assert len(results) == 1
+    assert results[0].success is True
+
+
+def test_plan_all_creates_fresh_queue_per_call():
+    """plan_all() creates a new queue.Queue on each call (fresh per goal invocation)."""
+    svc, _, _ = _build_service()
     path = _make_path_dto()
 
-    service.plan(path)
-
-    params = patch_plan_request_params.return_value
-    assert params.planning_pipeline == 'pilz_industrial_motion_planner'
-
-
-def test_plan_sets_goal_pose(service, mock_planning_component, patch_plan_request_params):
-    """set_goal_state is called with the path's target_pose and resolved tool_frame."""
-    pose = PoseStamped()
-    pose.header.frame_id = 'base_link'
-    path = _make_path_dto(target_pose=pose, tool_frame='custom_frame')
-
-    service.plan(path)
-
-    mock_planning_component.set_goal_state.assert_called_once_with(
-        pose_stamped_msg=pose,
-        pose_link='custom_frame',
-    )
-
-
-def test_plan_uses_default_speed_scaling(service, patch_plan_request_params):
-    """max_velocity/acceleration_scaling_factor are hardcoded to 0.1 (Phase 5 defers conversion)."""
-    path = _make_path_dto(cartesian_speed=1.5, acceleration=2.0)
-
-    service.plan(path)
-
-    params = patch_plan_request_params.return_value
-    assert params.max_velocity_scaling_factor == 0.1
-    assert params.max_acceleration_scaling_factor == 0.1
-
-
-# endregion: Success-path tests
-# region: Failure-path tests
-
-def test_plan_returns_failure_when_planning_fails(
-    service, mock_planning_component, patch_plan_request_params
-):
-    """When plan() returns a falsy result, PlanResultDTO(success=False) is returned."""
-    failing_result = MagicMock()
-    failing_result.__bool__ = MagicMock(return_value=False)
-    mock_planning_component.plan.return_value = failing_result
-
-    path = _make_path_dto(motion_type=MotionTypeEnum.LIN)
-
-    result = service.plan(path)
-
-    assert result.success is False
-    assert 'LIN' in result.error_message
-
-
-def test_plan_circ_clears_constraints_on_planning_failure(
-    service, mock_planning_component, patch_plan_request_params
-):
-    """set_path_constraints is called twice even when planning fails (try/finally)."""
-    failing_result = MagicMock()
-    failing_result.__bool__ = MagicMock(return_value=False)
-    mock_planning_component.plan.return_value = failing_result
-
-    path = _make_path_dto(
-        motion_type=MotionTypeEnum.CIRC,
-        circ_type=CircTypeEnum.CENTER,
-        circ_point=Point(x=0.5, y=0.5, z=0.5),
-    )
-
-    result = service.plan(path)
-
-    assert result.success is False
-    calls = mock_planning_component.set_path_constraints.call_args_list
-    assert len(calls) == 2, (
-        f'Expected constraints to be set then cleared (2 calls), got {len(calls)}'
-    )
-    # Second call must be the clear call (empty Constraints)
-    second_constraints = calls[1].args[0]
-    assert second_constraints.name == ''
-
-# endregion: Failure-path tests
-
-
-# region: Phase 4 — plan_all / iterate / cancel tests
-
-@pytest.fixture
-def patch_robot_state_msg():
-    """Patch robotStateToRobotStateMsg for the duration of Phase 4 tests."""
-    with patch(
-        'movement_controller.services.pilz_planner_service.robotStateToRobotStateMsg',
-        return_value=MagicMock()
-    ) as p:
-        yield p
-
-
-def _build_service_for_phase4(seq_response=None):
-    """Build a PilzPlannerService with mocked /plan_sequence_path service client.
-
-    seq_response: mock response; if None, builds a default success response.
-    """
-    if seq_response is None:
-        mock_future = MagicMock()
-        mock_future.done.return_value = True
-        resp = MagicMock()
-        resp.response.error_code.val = 1  # MoveItErrorCodes.SUCCESS
-        mock_traj = MagicMock()
-        mock_traj.joint_trajectory.joint_names = ['joint_1']
-        mock_traj.joint_trajectory.points = [MagicMock(positions=[0.0])]
-        resp.response.planned_trajectories = [mock_traj]
-        mock_future.result.return_value = resp
-    else:
-        mock_future = MagicMock()
-        mock_future.done.return_value = True
-        mock_future.result.return_value = seq_response
-
-    mock_client = MagicMock()
-    mock_client.call_async.return_value = mock_future
-
-    mock_node = MagicMock()
-    mock_node.create_client.return_value = mock_client
-
-    mock_moveit = MagicMock()
-    mock_moveit.get_planning_component.return_value = MagicMock()
-    mock_scene_ctx = MagicMock()
-    mock_scene_ctx.__enter__ = MagicMock(return_value=MagicMock(current_state=MagicMock()))
-    mock_scene_ctx.__exit__ = MagicMock(return_value=False)
-    mock_moveit.get_planning_scene_monitor.return_value.read_only.return_value = mock_scene_ctx
-
-    svc = PilzPlannerService(mock_moveit, 'ur_manipulator', mock_node)
-    svc._mock_client = mock_client  # expose for inspection
-    return svc
-
-
-def test_plan_all_starts_background_thread(patch_robot_state_msg):
-    """plan_all() starts a daemon thread; thread is alive (or completes) after call."""
-    svc = _build_service_for_phase4()
-    path = _make_path_dto()
     svc.plan_all([[path]])
-    # Thread starts; it completes quickly since the mock future is synchronous
-    svc._planning_thread.join(timeout=2.0)
-    assert svc._planning_thread is not None
-    # Drain any items that were pushed
+    q1 = svc._plan_queue
     list(svc.iterate_planned_trajectories())
+
+    svc.plan_all([[path]])
+    q2 = svc._plan_queue
+    list(svc.iterate_planned_trajectories())
+
+    assert q1 is not q2, 'plan_all() must create a fresh queue.Queue per call'
+
+# endregion: plan_all tests
+
+# region: iterate_planned_trajectories tests
+def test_iterate_raises_not_initialized_before_plan_all():
+    """iterate_planned_trajectories() raises NotInitializedError when called before plan_all()."""
+    svc, _, _ = _build_service()
+    with pytest.raises(NotInitializedError):
+        next(svc.iterate_planned_trajectories())
 
 
 def test_iterate_yields_single_path_result():
     """iterate_planned_trajectories yields PlanResultDTOs from the queue, then terminates."""
-    import queue as queue_module
-    svc = _build_service_for_phase4()
-    svc._plan_queue = queue_module.Queue()
-    svc._cancel_event = __import__('threading').Event()
+    svc, _, _ = _build_service()
+    svc._plan_queue = Queue()
+    svc._cancel_event = Event()
 
-    dto = PlanResultDTO(success=True, path_ids=[_UUID], blended=False, trajectories=[MagicMock()])
+    dto = PlanResultDTO(success=True, path_ids=[_UUID], blended=False)
     svc._plan_queue.put(dto)
-    svc._plan_queue.put(StopIteration)
+    svc._plan_queue.put(StopIteration())
 
     results = list(svc.iterate_planned_trajectories())
 
@@ -320,149 +287,150 @@ def test_iterate_yields_single_path_result():
     assert results[0].success is True
     assert results[0].path_ids == [_UUID]
     assert results[0].blended is False
-    assert len(results[0].trajectories) == 1
 
 
 def test_iterate_blended_group_sets_blended_true():
-    """Two-path group result with blended=True and both path IDs."""
-    import queue as queue_module
-    svc = _build_service_for_phase4()
-    svc._plan_queue = queue_module.Queue()
-    svc._cancel_event = __import__('threading').Event()
+    """Two-path group result with blended=True and both path IDs is yielded correctly."""
+    svc, _, _ = _build_service()
+    svc._plan_queue = Queue()
+    svc._cancel_event = Event()
 
     dto = PlanResultDTO(
         success=True,
         path_ids=[_UUID, _UUID2],
         blended=True,
-        trajectories=[MagicMock(), MagicMock()],
     )
     svc._plan_queue.put(dto)
-    svc._plan_queue.put(StopIteration)
+    svc._plan_queue.put(StopIteration())
 
     results = list(svc.iterate_planned_trajectories())
     assert len(results) == 1
     assert results[0].blended is True
     assert results[0].path_ids == [_UUID, _UUID2]
 
+# endregion: iterate_planned_trajectories tests
 
-def test_last_item_blend_radius_forced_to_zero():
-    """In a 2-path group, items[-1].blend_radius is 0.0 even when path blend_radius=0.05."""
-    # Call _plan_group_sequence directly to test PILZ blend_radius constraint without threading.
-    svc = _build_service_for_phase4()
-
-    resp2 = MagicMock()
-    resp2.response.error_code.val = 1
-    mock_traj1 = MagicMock()
-    mock_traj1.joint_trajectory.joint_names = ['j1']
-    mock_traj1.joint_trajectory.points = [MagicMock(positions=[0.0])]
-    mock_traj2 = MagicMock()
-    mock_traj2.joint_trajectory.joint_names = ['j1']
-    mock_traj2.joint_trajectory.points = [MagicMock(positions=[0.0])]
-    resp2.response.planned_trajectories = [mock_traj1, mock_traj2]
-
-    captured_items = []
-
-    def capture_call_async(request):
-        captured_items.extend(request.request.items)
-        mock_future = MagicMock()
-        mock_future.done.return_value = True
-        mock_future.result.return_value = resp2
-        return mock_future
-
-    svc._mock_client.call_async.side_effect = capture_call_async
-
-    from moveit_msgs.msg import RobotState
-    path1 = _make_path_dto(path_id=_UUID, blend_radius=0.05)
-    path2 = _make_path_dto(path_id=_UUID2, blend_radius=0.05)
-    svc._cancel_event = __import__('threading').Event()
-    svc._plan_group_sequence([path1, path2], RobotState())
-
-    assert len(captured_items) == 2, f'Expected 2 items, got {len(captured_items)}'
-    assert captured_items[-1].blend_radius == 0.0, (
-        f'Last item blend_radius should be 0.0, got {captured_items[-1].blend_radius}'
-    )
-
-
+# region: cancel tests
 def test_cancel_terminates_iterator_cleanly():
-    """cancel() while planning is blocked causes iterator to return quickly."""
-    # Blocking future — never completes until cancel_event is set
+    """cancel() while the iterator is blocked on an empty queue causes it to unblock via AbortPlanningError."""
+    # Use a non-sync future so the callback never fires — queue remains empty after plan_all()
     blocking_future = MagicMock()
-    blocking_future.done.return_value = False
 
-    mock_client = MagicMock()
-    mock_client.call_async.return_value = blocking_future
+    def never_call_callback(cb):
+        pass  # intentionally do not call the callback
 
-    mock_node = MagicMock()
-    mock_node.create_client.return_value = mock_client
+    blocking_future.add_done_callback = never_call_callback
 
-    mock_moveit = MagicMock()
-    mock_moveit.get_planning_component.return_value = MagicMock()
-    mock_scene_ctx = MagicMock()
-    mock_scene_ctx.__enter__ = MagicMock(return_value=MagicMock(current_state=MagicMock()))
-    mock_scene_ctx.__exit__ = MagicMock(return_value=False)
-    mock_moveit.get_planning_scene_monitor.return_value.read_only.return_value = mock_scene_ctx
+    mock_seq_client = MagicMock(spec=Client)
+    mock_seq_client.wait_for_service.return_value = True
+    mock_seq_client.call_async.return_value = blocking_future
 
-    with patch(
-        'movement_controller.services.pilz_planner_service.robotStateToRobotStateMsg',
-        return_value=MagicMock()
-    ):
-        svc = PilzPlannerService(mock_moveit, 'ur_manipulator', mock_node)
-        svc.plan_all([[_make_path_dto()]])
+    mock_scene_client = MagicMock(spec=Client)
+    mock_scene_client.wait_for_service.return_value = True
+    mock_scene_client.call_async.return_value = blocking_future
 
-    # Cancel after brief delay
+    mock_node = MagicMock(spec=LifecycleNode)
+    mock_node.get_logger.return_value = MagicMock(spec=RcutilsLogger)
+
+    def create_client_side_effect(**kwargs):
+        if kwargs.get('srv_name') == _SCENE_SRV:
+            return mock_scene_client
+        return mock_seq_client
+
+    mock_node.create_client.side_effect = create_client_side_effect
+
+    svc = PilzPlannerService(mock_node, 'ur_manipulator')
+    svc.on_activate()
+    svc.plan_all([[_make_path_dto()]])
+
+    # Cancel after a brief delay to unblock the iterator
     def do_cancel():
-        time.sleep(0.05)
+        sleep(0.05)
         svc.cancel()
 
-    threading.Thread(target=do_cancel, daemon=True).start()
+    Thread(target=do_cancel, daemon=True).start()
 
-    # Iterator should return within 2 seconds
-    done_event = threading.Event()
+    # Iterator should terminate (via AbortPlanningError) within 2 seconds
+    done_event = Event()
 
     def drain():
-        list(svc.iterate_planned_trajectories())
+        try:
+            list(svc.iterate_planned_trajectories())
+        except AbortPlanningError:
+            pass
         done_event.set()
 
-    threading.Thread(target=drain, daemon=True).start()
+    Thread(target=drain, daemon=True).start()
     assert done_event.wait(timeout=2.0), 'Iterator did not terminate after cancel() — possible hang'
 
 
-def test_planning_failure_yields_error_dto(patch_robot_state_msg):
-    """Service returning error_code.val != 1 causes PlanResultDTO(success=False) to be yielded."""
-    fail_resp = MagicMock()
-    fail_resp.response.error_code.val = 99  # not SUCCESS
-    svc = _build_service_for_phase4()
+# endregion: cancel tests
 
-    fail_future = MagicMock()
-    fail_future.done.return_value = True
-    fail_future.result.return_value = fail_resp
-    svc._mock_client.call_async.return_value = fail_future
+# region: _generate_motion_sequence_request tests
+
+def test_last_item_blend_radius_forced_to_zero():
+    """In a 2-path group the last MotionSequenceItem always has blend_radius=0.0 (PILZ constraint)."""
+    svc, _, _ = _build_service()
+    path1 = _make_path_dto(path_id=_UUID, blend_radius=0.05)
+    path2 = _make_path_dto(path_id=_UUID2, blend_radius=0.05)
+
+    seq_req = svc._generate_motion_sequence_request([path1, path2], RobotState())  # type: ignore
+
+    assert len(seq_req.items) == 2
+    assert seq_req.items[0].blend_radius == 0.05, 'First item should keep its original blend_radius' # type: ignore
+    assert seq_req.items[-1].blend_radius == 0.0, 'Last item blend_radius must be forced to 0.0'  # type: ignore
+
+
+def test_generate_request_maps_motion_type_to_planner_id():
+    """_generate_motion_sequence_request maps MotionTypeEnum to the correct PILZ planner_id."""
+    svc, _, _ = _build_service()
+    for motion_type, expected_planner_id in [
+        (MotionTypeEnum.LIN, 'LIN'),
+        (MotionTypeEnum.PTP, 'PTP'),
+    ]:
+        path = _make_path_dto(motion_type=motion_type)
+        seq_req = svc._generate_motion_sequence_request([path], RobotState())
+        assert seq_req.items[0].req.planner_id == expected_planner_id  # type: ignore
+        assert seq_req.items[0].req.pipeline_id == 'pilz_industrial_motion_planner'  # type: ignore
+
+
+def test_generate_request_sets_start_state_on_first_item_only():
+    """start_state is assigned only to the first MotionSequenceItem."""
+    svc, _, _ = _build_service()
+    start = RobotState()
+    path1 = _make_path_dto(path_id=_UUID)
+    path2 = _make_path_dto(path_id=_UUID2)
+
+    seq_req = svc._generate_motion_sequence_request([path1, path2], start)  # type: ignore
+
+    assert seq_req.items[0].req.start_state is start  # type: ignore
+    # Subsequent items should not be the same object as start
+    assert seq_req.items[1].req.start_state is not start  # type: ignore
+
+# endregion: _generate_motion_sequence_request tests
+
+# region: planning-failure / error-path tests
+def test_planning_failure_raises_abort_error():
+    """A GetMotionSequence response with error_code != SUCCESS causes AbortPlanningError."""
+    fail_resp = MagicMock(spec=MoveGroupSequence.Result)
+    fail_resp.response.error_code.val = MoveItErrorCodes.PLANNING_FAILED
+    svc, _, _ = _build_service(seq_response=fail_resp)
 
     svc.plan_all([[_make_path_dto()]])
-    svc._planning_thread.join(timeout=2.0)
-    results = list(svc.iterate_planned_trajectories())
 
-    assert len(results) == 1
-    assert results[0].success is False
-    assert results[0].error_message != ''
+    with pytest.raises(AbortPlanningError):
+        list(svc.iterate_planned_trajectories())
 
 
-def test_plan_all_creates_fresh_queue_per_call(patch_robot_state_msg):
-    """plan_all() creates a new queue.Queue on each call (D-04: fresh per goal invocation)."""
-    svc = _build_service_for_phase4()
-    path = _make_path_dto()
+def test_scene_retrieval_failure_raises_abort_error():
+    """A GetPlanningScene response with no robot_state causes AbortPlanningError."""
+    scene_resp = MagicMock(spec=GetPlanningScene.Response)
+    scene_resp.scene.robot_state = None  # triggers the guard in _initiate_planning
+    svc, _, _ = _build_service(scene_response=scene_resp)
 
-    svc.plan_all([[path]])
-    svc._planning_thread.join(timeout=2.0)
-    list(svc.iterate_planned_trajectories())
-    q1 = svc._plan_queue
+    svc.plan_all([[_make_path_dto()]])
 
-    svc.plan_all([[path]])
-    svc._planning_thread.join(timeout=2.0)
-    list(svc.iterate_planned_trajectories())
-    q2 = svc._plan_queue
+    with pytest.raises(AbortPlanningError):
+        list(svc.iterate_planned_trajectories())
 
-    assert q1 is not q2, 'plan_all() must create a fresh queue.Queue per call (D-04)'
-
-
-# endregion: Phase 4 — plan_all / iterate / cancel tests
+# endregion: planning-failure / error-path tests

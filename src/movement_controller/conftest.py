@@ -92,7 +92,7 @@ class _ConstraintsStub:
 
 
 if 'moveit_msgs.msg' in sys.modules:
-    sys.modules['moveit_msgs.msg'].Constraints = _ConstraintsStub
+    sys.modules['moveit_msgs.msg'].Constraints = _ConstraintsStub  # type: ignore
 
 
 def pytest_configure(config):  # noqa: ARG001

@@ -513,20 +513,6 @@ def test_goal_accepted_when_max_cartesian_speed_is_zero(node):
         node._is_executing = False
         node._constraint_config = None
 
-
-def test_goal_rejected_when_acceleration_exceeds_max(node):
-    """_goal_callback rejects when path.acceleration > max_acceleration."""
-    node._constraint_config = ConstraintConfigDTO(max_acceleration=0.3)
-    goal = _make_ros_goal()
-    goal.paths[0].acceleration = 0.5  # exceeds 0.3 cap
-    try:
-        result = node._goal_callback(goal)
-        assert result == GoalResponse.REJECT
-        assert node._is_executing is False
-    finally:
-        node._constraint_config = None
-
-
 def test_goal_accepted_when_constraint_config_is_none(node):
     """When _constraint_config is None, no speed check is performed."""
     assert node._constraint_config is None
@@ -542,7 +528,7 @@ def test_goal_accepted_when_path_speed_is_zero(node):
     """path.cartesian_speed=0.0 → check skipped (0.0 means unspecified in path)."""
     node._constraint_config = ConstraintConfigDTO(max_cartesian_speed=0.5)
     goal = _make_ros_goal()
-    goal.paths[0].cartesian_speed = 0.0  # unspecified
+    goal.paths[0].cartesian_speed = 0.0  # unspecified, max speed will be used
     try:
         result = node._goal_callback(goal)
         assert result == GoalResponse.ACCEPT

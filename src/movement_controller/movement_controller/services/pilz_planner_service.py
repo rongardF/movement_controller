@@ -180,7 +180,7 @@ class PilzPlannerService:
         return constraints
 
     def _merge_circ_and_path_constraints(self, circ: Constraints, path: Constraints) -> Constraints:
-        """Merge CIRC arc definition with phase-5 path constraints.
+        """Merge CIRC arc central point path constraint with general path constraints
 
         Preserves the CIRC arc point at position_constraints[0] and appends workspace BOX
         (if any) from path constraints at [1:]. This avoids overwriting the arc definition
@@ -188,7 +188,7 @@ class PilzPlannerService:
         """
         merged = Constraints()
         merged.name = circ.name
-        merged.position_constraints = [circ.position_constraints[0]] + path.position_constraints
+        merged.position_constraints = [circ.position_constraints[0]] + path.position_constraints  # type: ignore
         merged.joint_constraints = path.joint_constraints
         merged.orientation_constraints = path.orientation_constraints
         return merged
@@ -200,7 +200,7 @@ class PilzPlannerService:
 
         pos_constraint = PositionConstraint()
         pos_constraint.header.frame_id = path_dto.target_pose.header.frame_id
-        pos_constraint.link_name = path_dto.tool_frame or 'tool0'
+        pos_constraint.link_name = path_dto.tool_frame
 
         sphere = SolidPrimitive()
         sphere.type = SolidPrimitive.SPHERE
@@ -243,18 +243,24 @@ class PilzPlannerService:
             item.req.pipeline_id = 'pilz_industrial_motion_planner'
             item.req.planner_id = path_dto.motion_type.value  # 'LIN', 'PTP', or 'CIRC'
             item.req.allowed_planning_time = 5.0
-            item.req.max_velocity_scaling_factor = max(0.01, min(1.0, path_dto.cartesian_speed)) if path_dto.cartesian_speed > 0.0 else 1.0
-            item.req.max_acceleration_scaling_factor = max(0.01, min(1.0, path_dto.acceleration)) if path_dto.acceleration > 0.0 else 1.0
+            item.req.max_velocity_scaling_factor = 1.0  # this is joint-level scaling; we use cartesian speed limits for LIN/CIRC, so we set this to 1.0 to avoid unintended additional scaling
+            item.req.max_acceleration_scaling_factor = 1.0
             item.req.goal_constraints = [
                 self._build_pose_goal_constraints(
-                    path_dto.tool_frame or 'tool0', path_dto.target_pose
+                    path_dto.tool_frame, path_dto.target_pose
                 )
             ]
+            if path_dto.motion_type in [MotionTypeEnum.LIN, MotionTypeEnum.CIRC]:
+                item.req.cartesian_speed_limited_link = path_dto.tool_frame
+                # if cartesian speed is set (non-zero), use it; otherwise, leave at 0.0 so we use max allowed speed
+                # NOTE: this requires that we are using 'default_planner_request_adapters/LimitMaxCartesianLinkSpeed'
+                # in robot moveit config!
+                item.req.max_cartesian_speed = path_dto.cartesian_speed if path_dto.cartesian_speed > 0.0 else 0.0
 
             if i == 0:
                 item.req.start_state = start_state_msg
 
-            path_constraints = self._build_path_constraints(path_dto.tool_frame or 'tool0')
+            path_constraints = self._build_path_constraints(path_dto.tool_frame)
             if path_dto.motion_type == MotionTypeEnum.CIRC:
                 circ_constraints = self._build_circ_constraints(path_dto)
                 item.req.path_constraints = self._merge_circ_and_path_constraints(
@@ -374,13 +380,8 @@ class PilzPlannerService:
 
     # region: public methods
     def set_constraints(self, dto: ConstraintConfigDTO) -> None:
-        """Store validated constraint config; used by _build_path_constraints()."""
+        """Store validated constraint config"""
         self._constraint_config = dto
-        if dto.joint_max_velocities:
-            self._logger.warning(
-                'constraints.joint.max_velocities is set but PILZ has no per-joint velocity API '
-                '\u2014 max_velocities will NOT be enforced in planning requests (D-13)'
-            )
 
     def on_activate(self) -> None:
         self._plan_seq_client = self._node.create_client(

@@ -61,7 +61,6 @@ def _make_service(dto: ConstraintConfigDTO | None = None) -> PilzPlannerService:
 
 
 # region: ConstraintConfigDTO property tests
-
 def test_workspace_enabled_false_at_sentinel_defaults():
     """Default ConstraintConfigDTO has all axes at sentinel range → workspace_enabled is False."""
     dto = ConstraintConfigDTO()
@@ -113,11 +112,9 @@ def test_orientation_constraint_enabled_true_when_narrowed():
     dto = ConstraintConfigDTO(orientation_tolerance_z=0.1)
     assert dto.orientation_constraint_enabled is True
 
-
 # endregion: ConstraintConfigDTO property tests
 
 # region: ConstraintConfigDTO validation tests
-
 def test_validation_error_x_min_greater_than_x_max():
     """x_min > x_max raises ValidationError."""
     with pytest.raises(ValidationError):
@@ -144,22 +141,9 @@ def test_validation_error_joint_array_length_mismatch():
             joint_lower_limits=[-1.0],
         )
 
-
-def test_validation_error_max_velocities_length_mismatch():
-    """joint_max_velocities length != joint_names length raises ValidationError."""
-    with pytest.raises(ValidationError):
-        ConstraintConfigDTO(
-            joint_names=['j1'],
-            joint_lower_limits=[-1.0],
-            joint_upper_limits=[1.0],
-            joint_max_velocities=[0.5, 0.5],
-        )
-
-
 # endregion: ConstraintConfigDTO validation tests
 
 # region: _build_path_constraints tests
-
 def test_build_path_constraints_returns_empty_when_no_constraint_config():
     """No constraint config set → _build_path_constraints returns empty Constraints."""
     svc = _make_service()
@@ -190,7 +174,7 @@ def test_build_path_constraints_box_full_lengths():
     c = svc._build_path_constraints('tool0')
 
     assert len(c.position_constraints) == 1
-    pc = c.position_constraints[0]
+    pc = c.position_constraints[0]  # type: ignore
     assert pc.constraint_region.primitives[0].type == SolidPrimitive.BOX
     # full lengths: (2.0 - -1.0)=3.0, (3.0 - 0.0)=3.0, (0.5 - 0.0)=0.5
     dims = pc.constraint_region.primitives[0].dimensions
@@ -224,7 +208,7 @@ def test_build_path_constraints_joint_midpoint_and_tolerances():
     c = svc._build_path_constraints('tool0')
 
     assert len(c.joint_constraints) == 1
-    jc = c.joint_constraints[0]
+    jc = c.joint_constraints[0]  # type: ignore
     assert jc.joint_name == 'j1'
     assert jc.position == pytest.approx(0.0)          # (-1.0 + 1.0) / 2
     assert jc.tolerance_above == pytest.approx(1.0)   # 1.0 - 0.0
@@ -243,9 +227,9 @@ def test_build_path_constraints_multiple_joints():
     c = svc._build_path_constraints('tool0')
 
     assert len(c.joint_constraints) == 2
-    assert c.joint_constraints[0].joint_name == 'j1'
-    assert c.joint_constraints[1].joint_name == 'j2'
-    assert c.joint_constraints[1].position == pytest.approx(1.0)   # (0.0+2.0)/2
+    assert c.joint_constraints[0].joint_name == 'j1'  # type: ignore
+    assert c.joint_constraints[1].joint_name == 'j2'  # type: ignore
+    assert c.joint_constraints[1].position == pytest.approx(1.0)   # (0.0+2.0)/2 # type: ignore
 
 
 def test_build_path_constraints_orientation_fields():
@@ -259,7 +243,7 @@ def test_build_path_constraints_orientation_fields():
     c = svc._build_path_constraints('my_tool')
 
     assert len(c.orientation_constraints) == 1
-    oc = c.orientation_constraints[0]
+    oc = c.orientation_constraints[0]  # type: ignore
     assert oc.link_name == 'my_tool'
     assert oc.absolute_x_axis_tolerance == pytest.approx(0.1)
     assert oc.absolute_y_axis_tolerance == pytest.approx(0.2)
@@ -267,11 +251,9 @@ def test_build_path_constraints_orientation_fields():
     assert oc.parameterization == 0
     assert oc.orientation.w == pytest.approx(1.0)
 
-
 # endregion: _build_path_constraints tests
 
 # region: _merge_circ_and_path_constraints tests
-
 def _make_arc_constraints(name: str) -> Constraints:
     """Build a minimal CIRC arc Constraints (mimics _build_circ_constraints output)."""
     from geometry_msgs.msg import Pose
@@ -322,9 +304,9 @@ def test_merge_preserves_circ_arc_at_index_zero():
     assert merged.name == 'interim'
     assert len(merged.position_constraints) == 2
     # arc point preserved at index 0
-    assert merged.position_constraints[0] is circ.position_constraints[0]
+    assert merged.position_constraints[0] is circ.position_constraints[0]  # type: ignore
     # BOX appended at index 1
-    assert merged.position_constraints[1] is path.position_constraints[0]
+    assert merged.position_constraints[1] is path.position_constraints[0]  # type: ignore
 
 
 def test_merge_with_center_name():
@@ -345,7 +327,7 @@ def test_merge_with_empty_path_constraints():
 
     assert merged.name == 'center'
     assert len(merged.position_constraints) == 1
-    assert merged.position_constraints[0] is circ.position_constraints[0]
+    assert merged.position_constraints[0] is circ.position_constraints[0]  # type: ignore
 
 
 def test_merge_propagates_joint_and_orientation_from_path():
@@ -365,9 +347,8 @@ def test_merge_propagates_joint_and_orientation_from_path():
     merged = svc._merge_circ_and_path_constraints(circ, path)
 
     assert len(merged.joint_constraints) == 1
-    assert merged.joint_constraints[0] is jc
+    assert merged.joint_constraints[0] is jc  # type: ignore
     assert len(merged.orientation_constraints) == 1
-    assert merged.orientation_constraints[0] is oc
-
+    assert merged.orientation_constraints[0] is oc  # type: ignore
 
 # endregion: _merge_circ_and_path_constraints tests

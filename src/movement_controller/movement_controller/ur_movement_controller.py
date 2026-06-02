@@ -165,7 +165,7 @@ class URMovementController(LifecycleNode):
         self.declare_parameter(
             'constraints.max_acceleration',
             0.0,
-            ParameterDescriptor(description='Node-level max acceleration cap (0..1 ratio, 0.0 = unconstrained).'),
+            ParameterDescriptor(description='Node-level max acceleration cap (0..1 ratio, 0.0 = unconstrained).'),  # FIXME: update descriptions
         )
         # endregion: parameters
 
@@ -320,46 +320,14 @@ class URMovementController(LifecycleNode):
         # Full goal validation via DTO — reset executing flag on failure
         try:
             self._trajectory_goal = TrajectoryGoalDTO.from_ros_msg(goal)
+            if self._constraint_config is not None:
+                self._constraint_config.validate_goal(self._trajectory_goal)
         except (ValidationError, ValueError) as e:
             self.get_logger().error(f'Goal rejected: {e}')
             self._trajectory_goal = None
             with self._executing_lock:
                 self._is_executing = False
             return GoalResponse.REJECT
-
-        # Speed and acceleration cap enforcement (CON-05, D-07)
-        if self._constraint_config is not None:
-            for path in self._trajectory_goal.paths:
-                if (
-                    path.cartesian_speed > 0.0
-                    and self._constraint_config.max_cartesian_speed > 0.0
-                    and path.cartesian_speed > self._constraint_config.max_cartesian_speed
-                ):
-                    msg = (
-                        f"Path '{path.path_id}' cartesian_speed {path.cartesian_speed} m/s "
-                        f"exceeds node maximum {self._constraint_config.max_cartesian_speed} m/s "
-                        f"(constraints.max_cartesian_speed)"
-                    )
-                    self.get_logger().error(msg)
-                    self._trajectory_goal = None
-                    with self._executing_lock:
-                        self._is_executing = False
-                    return GoalResponse.REJECT
-                if (
-                    path.acceleration > 0.0
-                    and self._constraint_config.max_acceleration > 0.0
-                    and path.acceleration > self._constraint_config.max_acceleration
-                ):
-                    msg = (
-                        f"Path '{path.path_id}' acceleration {path.acceleration} m/s\u00b2 "
-                        f"exceeds node maximum {self._constraint_config.max_acceleration} m/s\u00b2 "
-                        f"(constraints.max_acceleration)"
-                    )
-                    self.get_logger().error(msg)
-                    self._trajectory_goal = None
-                    with self._executing_lock:
-                        self._is_executing = False
-                    return GoalResponse.REJECT
 
         return GoalResponse.ACCEPT
 

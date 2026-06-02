@@ -32,6 +32,8 @@ import math
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from movement_controller.models import TrajectoryGoalDTO
+
 
 class ConstraintConfigDTO(BaseModel):
     """Validated, immutable container for all node-level motion constraint parameters."""
@@ -59,10 +61,6 @@ class ConstraintConfigDTO(BaseModel):
         default_factory=list,
         description='Upper position limits in radians, matching joint_names order.',
     )
-    joint_max_velocities: list[float] = Field(
-        default_factory=list,
-        description='Max joint velocities in rad/s, matching joint_names order. Stored for documentation; PILZ has no per-joint velocity API (D-13).',
-    )
 
     # Orientation constraint (default 2*pi = unconstrained per D-04)
     orientation_tolerance_x: float = Field(
@@ -83,13 +81,9 @@ class ConstraintConfigDTO(BaseModel):
         default=0.0,
         description='Node-level max cartesian speed cap. 0.0 = unconstrained. Goals with path.cartesian_speed exceeding this are rejected at _goal_callback.',
     )
-    max_acceleration: float = Field(
-        default=0.0,
-        description='Node-level max acceleration cap. 0.0 = unconstrained.',
-    )
 
     @model_validator(mode='after')
-    def _validate_workspace_bounds(self) -> ConstraintConfigDTO:
+    def _validate_workspace_bounds(self) -> 'ConstraintConfigDTO':
         """Ensure workspace bounds are ordered correctly on each axis."""
         if self.x_min > self.x_max:
             raise ValueError(
@@ -106,7 +100,7 @@ class ConstraintConfigDTO(BaseModel):
         return self
 
     @model_validator(mode='after')
-    def _validate_joint_arrays(self) -> ConstraintConfigDTO:
+    def _validate_joint_arrays(self) -> 'ConstraintConfigDTO':
         """Ensure joint_names, joint_lower_limits, and joint_upper_limits have matching lengths."""
         n_names = len(self.joint_names)
         n_lower = len(self.joint_lower_limits)
@@ -116,11 +110,7 @@ class ConstraintConfigDTO(BaseModel):
                 f'joint_names ({n_names}), joint_lower_limits ({n_lower}), and '
                 f'joint_upper_limits ({n_upper}) must all have the same length'
             )
-        n_vel = len(self.joint_max_velocities)
-        if n_vel > 0 and n_vel != n_names:
-            raise ValueError(
-                f'joint_max_velocities ({n_vel}) must match len(joint_names) ({n_names})'
-            )
+
         return self
 
     @property
@@ -145,3 +135,17 @@ class ConstraintConfigDTO(BaseModel):
             or self.orientation_tolerance_y < 2 * math.pi
             or self.orientation_tolerance_z < 2 * math.pi
         )
+    
+    def validate_goal(self, trajectory_goal: TrajectoryGoalDTO) -> None:
+        """Validate that the given goal's constraints are compatible with this config, raising ValueError if not."""
+        for path in trajectory_goal.paths:
+            if (
+                path.cartesian_speed > 0.0
+                and self.max_cartesian_speed > 0.0
+                and path.cartesian_speed > self.max_cartesian_speed
+            ):
+                raise ValueError(
+                    f"Path '{path.path_id}' cartesian_speed {path.cartesian_speed} m/s "
+                    f"exceeds node maximum {self.max_cartesian_speed} m/s "
+                    f"(constraints.max_cartesian_speed)"
+                )

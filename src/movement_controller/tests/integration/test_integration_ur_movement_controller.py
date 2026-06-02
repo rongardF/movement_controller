@@ -493,7 +493,6 @@ def test_execution_failure_returns_error(action_client, mock_move_group):
 
 
 # region: workspace constraint integration tests
-
 def test_workspace_constraint_violation_causes_planning_failure(
     action_client, mock_move_group, controller
 ):

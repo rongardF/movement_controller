@@ -447,33 +447,6 @@ def test_set_constraints_stores_dto():
     assert svc._constraint_config is dto
 
 
-def test_set_constraints_logs_warning_for_nonempty_max_velocities():
-    """set_constraints() logs a warning when joint_max_velocities is non-empty."""
-    svc, _, _ = _build_service()
-    dto = ConstraintConfigDTO(
-        joint_names=['j1'],
-        joint_lower_limits=[-1.0],
-        joint_upper_limits=[1.0],
-        joint_max_velocities=[0.5],
-    )
-    svc.set_constraints(dto)
-    svc._node.get_logger.return_value.warning.assert_called_once()
-    warning_args = svc._node.get_logger.return_value.warning.call_args[0][0]
-    assert 'max_velocities' in warning_args or 'D-13' in warning_args
-
-
-def test_set_constraints_no_warning_when_max_velocities_empty():
-    """set_constraints() does NOT log a warning when joint_max_velocities is empty."""
-    svc, _, _ = _build_service()
-    dto = ConstraintConfigDTO(
-        joint_names=['j1'],
-        joint_lower_limits=[-1.0],
-        joint_upper_limits=[1.0],
-    )
-    svc.set_constraints(dto)
-    assert svc._node.get_logger.return_value.warning.call_count == 0
-
-
 def test_constraints_injected_into_every_sequence_item():
     """Active workspace constraint is injected into every MotionSequenceItem."""
     from shape_msgs.msg import SolidPrimitive
@@ -502,7 +475,7 @@ def test_constraints_not_injected_when_all_disabled():
     path = _make_path_dto()
     seq_req = svc._generate_motion_sequence_request([path], RobotState())
 
-    item = seq_req.items[0]
+    item = seq_req.items[0]  # type: ignore
     assert len(item.req.path_constraints.position_constraints) == 0
     assert len(item.req.path_constraints.joint_constraints) == 0
     assert len(item.req.path_constraints.orientation_constraints) == 0

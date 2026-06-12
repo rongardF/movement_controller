@@ -15,3 +15,5 @@ __pycache__/
 *.swp
 *.swo
 .DS_Store
+.planning/
+dev_notes.txt

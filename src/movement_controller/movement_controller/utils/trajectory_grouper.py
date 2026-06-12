@@ -36,20 +36,21 @@ class TrajectoryGrouper:
     def group(paths: list[TrajectoryPathDTO]) -> list[list[TrajectoryPathDTO]]:
         """Group trajectory paths into blended execution groups.
 
-        Algorithm:
-        - First path with blend_radius >= 0 starts a new group, subsequent paths with
-          blend_radius > 0 are grouped with the previous group.
-        - Any subsequent path with blend_radius <= 0 starts a new group.
+        Consecutive paths where the *previous* path has a ``blend_radius > 0``
+        are merged into one group so they can be submitted as a single PILZ
+        ``MotionSequenceRequest``.  A path with ``blend_radius <= 0`` that
+        follows a blended path closes the current group (becoming the mandatory
+        zero-radius final item).  A path with ``blend_radius <= 0`` that follows
+        another zero-radius path starts a new single-item group.
 
-        Args:
-            paths: Non-empty list of validated TrajectoryPathDTO objects with unique
-                   path_id values (guaranteed by TrajectoryGoalDTO validation).
-
-        Returns:
-            List of groups, where each group is a list of TrajectoryPathDTO objects.
-
-        Raises:
-            ValueError: If paths is empty.
+        :param paths: Non-empty list of validated :class:`~movement_controller.models.TrajectoryPathDTO`
+            objects with unique ``path_id`` values (guaranteed by
+            :class:`~movement_controller.models.TrajectoryGoalDTO` validation).
+        :type paths: list[TrajectoryPathDTO]
+        :returns: Ordered list of groups, where each group is a list of
+            :class:`~movement_controller.models.TrajectoryPathDTO` objects.
+        :rtype: list[list[TrajectoryPathDTO]]
+        :raises ValueError: If ``paths`` is empty.
         """
         if not paths:
             raise ValueError('paths list must not be empty')

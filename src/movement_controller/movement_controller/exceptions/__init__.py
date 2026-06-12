@@ -1,3 +1,2 @@
-from movement_controller.exceptions.abort_planning_error import AbortPlanningError
+from movement_controller.exceptions.invalid_start_state_error import InvalidStartStateError
 from movement_controller.exceptions.execution_failed_error import ExecutionFailedError
-from movement_controller.exceptions.not_initialized_error import NotInitializedError

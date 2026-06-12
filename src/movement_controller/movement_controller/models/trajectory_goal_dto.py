@@ -28,14 +28,11 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
-
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from movement_controller.models.trajectory_path_dto import TrajectoryPathDTO
 
-if TYPE_CHECKING:
-    from movement_controller.action import ExecuteTrajectory
+from movement_controller.action import ExecuteTrajectory
 
 
 class TrajectoryGoalDTO(BaseModel):
@@ -50,6 +47,14 @@ class TrajectoryGoalDTO(BaseModel):
     @field_validator('paths', mode='after')
     @classmethod
     def validate_paths(cls, v: list[TrajectoryPathDTO]) -> list[TrajectoryPathDTO]:
+        """Validate that ``paths`` is non-empty and contains no duplicate IDs.
+
+        :param v: The parsed list of :class:`TrajectoryPathDTO` objects.
+        :type v: list[TrajectoryPathDTO]
+        :returns: The validated list, unchanged.
+        :rtype: list[TrajectoryPathDTO]
+        :raises ValueError: If ``paths`` is empty or contains a duplicate ``path_id``.
+        """
         if not v:
             raise ValueError('paths must not be empty')
         seen: set[str] = set()
@@ -61,5 +66,15 @@ class TrajectoryGoalDTO(BaseModel):
 
     @classmethod
     def from_ros_msg(cls, goal_msg: ExecuteTrajectory.Goal) -> TrajectoryGoalDTO:
-        """Construct a TrajectoryGoalDTO from an ExecuteTrajectory.Goal ROS2 message."""
+        """Construct a :class:`TrajectoryGoalDTO` from an :class:`ExecuteTrajectory.Goal` ROS 2 message.
+
+        :param goal_msg: ROS 2 action goal message containing a list of
+            :class:`~movement_controller.msg.TrajectoryPath` messages.
+        :type goal_msg: ExecuteTrajectory.Goal
+        :returns: Validated, immutable :class:`TrajectoryGoalDTO`.
+        :rtype: TrajectoryGoalDTO
+        :raises pydantic.ValidationError: If any path fails Pydantic field validation.
+        :raises ValueError: If the resulting paths list is empty or contains
+            duplicate ``path_id`` values.
+        """
         return cls(paths=[TrajectoryPathDTO.from_ros_msg(p) for p in goal_msg.paths])

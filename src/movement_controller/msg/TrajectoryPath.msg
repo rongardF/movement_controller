@@ -38,9 +38,11 @@ string CIRC_TYPE_CENTER="center"
 string path_id
 string motion_type
 geometry_msgs/PoseStamped target_pose
-float64 blend_radius
-float64 cartesian_speed
-float64 acceleration
+float64 blend_radius 0.0
+float64 cartesian_speed 0.0
+float64 cartesian_acceleration 0.0
+float64 joint_speed 0.0
+float64 joint_acceleration 0.0
 string tool_frame
 string circ_type
 geometry_msgs/Point circ_point

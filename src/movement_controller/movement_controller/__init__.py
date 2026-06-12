@@ -25,6 +25,6 @@
 # ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 # POSSIBILITY OF SUCH DAMAGE.
 
-from movement_controller.ur_movement_controller import URMovementController
+from movement_controller.movement_controller import MovementController
 
-__all__ = ['URMovementController']
+__all__ = ['MovementController']

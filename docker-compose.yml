@@ -15,14 +15,20 @@ services:
       network: host
     image: workstation:dev
     network_mode: host            # Required: DDS multicast/unicast discovery
+    privileged: true
     environment:
       - ROS_DOMAIN_ID=${ROS_DOMAIN_ID:-42}
       - RCUTILS_LOGGING_USE_STDOUT=0             # rclpy logs to stderr; JSON goes to stdout
       - MONGO_URI=${MONGO_URI:-mongodb://localhost:27017}
       - WORKSTATION_ID=${WORKSTATION_ID:-dev-workstation-01}
       - ROS_AUTOMATIC_DISCOVERY_RANGE=LOCALHOST  # Limit DDS discovery to this machine
+      - DISPLAY=$DISPLAY
+      - QT_X11_NO_MITSHM=1
+      - XAUTHORITY=$XAUTH
+      - LIBGL_ALWAYS_SOFTWARE=1                  # Use Mesa llvmpipe; remove if you want GPU rendering via /dev/dri
     volumes:
       - .:/workspaces/movement_controller:rw   # Live source mount (symlink-install works)
+      - /tmp/.X11-unix:/tmp/.X11-unix:rw
     stdin_open: true
     tty: true
     profiles:

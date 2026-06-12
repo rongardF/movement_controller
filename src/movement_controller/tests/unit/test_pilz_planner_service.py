@@ -41,6 +41,7 @@ from moveit_msgs.msg import RobotState
 
 from moveit_msgs.msg import (
     MoveItErrorCodes,
+    MotionSequenceResponse,
     RobotState,
     RobotTrajectory
 )
@@ -49,8 +50,6 @@ from moveit_msgs.srv import GetPlanningScene
 from trajectory_msgs.msg import JointTrajectoryPoint
 
 from movement_controller.enums.motion_type_enum import MotionTypeEnum
-from movement_controller.exceptions.abort_planning_error import AbortPlanningError
-from movement_controller.exceptions.not_initialized_error import NotInitializedError
 from movement_controller.models.constraint_config_dto import ConstraintConfigDTO
 from movement_controller.models.plan_result_dto import PlanResultDTO
 from movement_controller.models.planning_session_dto import PlanningSessionDTO
@@ -59,15 +58,15 @@ from movement_controller.services.pilz_planner_service import PilzPlannerService
 
 
 # Resolve TYPE_CHECKING-only forward references so Pydantic can instantiate these models in tests.
-# Use 'MagicMock' as the resolved type so it is accepted by the validator.
-PlanResultDTO.model_rebuild(_types_namespace={'MotionSequenceResponse': MagicMock})
-PlanningSessionDTO.model_rebuild(_types_namespace={'RobotState': MagicMock})
+# Use 'object' as the resolved type so it is accepted by the validator.
+PlanResultDTO.model_rebuild(_types_namespace={'MotionSequenceResponse': object})
+PlanningSessionDTO.model_rebuild(_types_namespace={'RobotState': object})
 
 _UUID = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'
 _UUID2 = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb'
 
-_SEQ_SRV = '/move_group/plan_sequence_path'
-_SCENE_SRV = '/move_group/get_planning_scene'
+_SEQ_SRV = 'plan_sequence_path'
+_SCENE_SRV = 'get_planning_scene'
 
 
 def _make_path_dto(**overrides) -> TrajectoryPathDTO:
@@ -94,14 +93,16 @@ def _make_sync_future(response):
 
 def _make_default_seq_response():
     """Build a default successful GetMotionSequence response mock."""
-    resp = MagicMock(spec=MoveGroupSequence.Result)
-    resp.response.error_code.val = MoveItErrorCodes.SUCCESS
+    real_motion_response = MotionSequenceResponse()
+    real_motion_response.error_code.val = MoveItErrorCodes.SUCCESS
     mock_traj = MagicMock(spec=RobotTrajectory)
     mock_traj.joint_trajectory.joint_names = ['joint_1']
     joint_traj_point = MagicMock(spec=JointTrajectoryPoint)
     joint_traj_point.positions = [0.0]
     mock_traj.joint_trajectory.points = [joint_traj_point]
-    resp.response.planned_trajectories = [mock_traj]
+
+    resp = MagicMock()
+    resp.response = real_motion_response
     return resp
 
 
@@ -265,11 +266,13 @@ def test_plan_all_creates_fresh_queue_per_call():
 # endregion: plan_all tests
 
 # region: iterate_planned_trajectories tests
-def test_iterate_raises_not_initialized_before_plan_all():
-    """iterate_planned_trajectories() raises NotInitializedError when called before plan_all()."""
+def test_iterate_yields_error_before_plan_all():
+    """iterate_planned_trajectories() yields a single failure DTO when called before plan_all()."""
     svc, _, _ = _build_service()
-    with pytest.raises(NotInitializedError):
-        next(svc.iterate_planned_trajectories())
+    results = list(svc.iterate_planned_trajectories())
+    assert len(results) == 1
+    assert results[0].success is False
+    assert 'plan queue not initialized' in results[0].error_message
 
 
 def test_iterate_yields_single_path_result():
@@ -313,7 +316,9 @@ def test_iterate_blended_group_sets_blended_true():
 
 # region: cancel tests
 def test_cancel_terminates_iterator_cleanly():
-    """cancel() while the iterator is blocked on an empty queue causes it to unblock via AbortPlanningError."""
+    """cancel() while the iterator is blocked on an empty queue causes it to unblock and terminate
+    with a single failure DTO (no exception raised).
+    """
     # Use a non-sync future so the callback never fires — queue remains empty after plan_all()
     blocking_future = MagicMock()
 
@@ -351,18 +356,18 @@ def test_cancel_terminates_iterator_cleanly():
 
     Thread(target=do_cancel, daemon=True).start()
 
-    # Iterator should terminate (via AbortPlanningError) within 2 seconds
+    # Iterator should yield a failure DTO and terminate cleanly within 2 seconds
     done_event = Event()
+    results = []
 
     def drain():
-        try:
-            list(svc.iterate_planned_trajectories())
-        except AbortPlanningError:
-            pass
+        results.extend(svc.iterate_planned_trajectories())
         done_event.set()
 
     Thread(target=drain, daemon=True).start()
     assert done_event.wait(timeout=2.0), 'Iterator did not terminate after cancel() — possible hang'
+    assert len(results) == 1
+    assert results[0].success is False
 
 
 # endregion: cancel tests
@@ -411,28 +416,32 @@ def test_generate_request_sets_start_state_on_first_item_only():
 # endregion: _generate_motion_sequence_request tests
 
 # region: planning-failure / error-path tests
-def test_planning_failure_raises_abort_error():
-    """A GetMotionSequence response with error_code != SUCCESS causes AbortPlanningError."""
+def test_planning_failure_yields_failure_dto():
+    """A GetMotionSequence response with error_code != SUCCESS yields a failure PlanResultDTO."""
     fail_resp = MagicMock(spec=MoveGroupSequence.Result)
     fail_resp.response.error_code.val = MoveItErrorCodes.PLANNING_FAILED
     svc, _, _ = _build_service(seq_response=fail_resp)
 
     svc.plan_all([[_make_path_dto()]])
 
-    with pytest.raises(AbortPlanningError):
-        list(svc.iterate_planned_trajectories())
+    results = list(svc.iterate_planned_trajectories())
+    assert len(results) == 1
+    assert results[0].success is False
+    assert results[0].error_message != ''
 
 
-def test_scene_retrieval_failure_raises_abort_error():
-    """A GetPlanningScene response with no robot_state causes AbortPlanningError."""
+def test_scene_retrieval_failure_yields_failure_dto():
+    """A GetPlanningScene response with no robot_state yields a failure PlanResultDTO."""
     scene_resp = MagicMock(spec=GetPlanningScene.Response)
     scene_resp.scene.robot_state = None  # triggers the guard in _initiate_planning
     svc, _, _ = _build_service(scene_response=scene_resp)
 
     svc.plan_all([[_make_path_dto()]])
 
-    with pytest.raises(AbortPlanningError):
-        list(svc.iterate_planned_trajectories())
+    results = list(svc.iterate_planned_trajectories())
+    assert len(results) == 1
+    assert results[0].success is False
+    assert results[0].error_message != ''
 
 # endregion: planning-failure / error-path tests
 

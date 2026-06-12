@@ -29,7 +29,6 @@
 from __future__ import annotations
 
 import re
-from typing import TYPE_CHECKING
 
 from geometry_msgs.msg import Point, PoseStamped
 from pydantic import BaseModel, ConfigDict, Field, field_validator
@@ -37,8 +36,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 from movement_controller.enums.circ_type_enum import CircTypeEnum
 from movement_controller.enums.motion_type_enum import MotionTypeEnum
 
-if TYPE_CHECKING:
-    from movement_controller.msg import TrajectoryPath
+from movement_controller.msg import TrajectoryPath
 
 _UUID4_RE = re.compile(
     r'^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
@@ -62,9 +60,17 @@ class TrajectoryPathDTO(BaseModel):
         default=0.0,
         description='End-effector cartesian speed in m/s',
     )
-    acceleration: float = Field(
+    cartesian_acceleration: float = Field(
         default=0.0,
-        description='End-effector acceleration in m/s²',
+        description='End-effector cartesian acceleration in m/s²',
+    )
+    joint_speed: float = Field(
+        default=0.0,
+        description='End-effector joint speed in rad/s',
+    )
+    joint_acceleration: float = Field(
+        default=0.0,
+        description='End-effector joint acceleration in rad/s²',
     )
     tool_frame: str = Field(
         default='',
@@ -82,6 +88,15 @@ class TrajectoryPathDTO(BaseModel):
     @field_validator('path_id', mode='before')
     @classmethod
     def validate_path_id(cls, v: str) -> str:
+        """Validate that ``path_id`` is a non-empty UUID4 string.
+
+        :param v: Raw value for ``path_id`` before Pydantic coercion.
+        :type v: str
+        :returns: The validated ``path_id`` string, unchanged.
+        :rtype: str
+        :raises ValueError: If ``path_id`` is empty or does not match the UUID4
+            pattern ``^[0-9a-f]{8}-...-4...-[89ab]...$``.
+        """
         if not v:
             raise ValueError('path_id must be non-empty')
         if not _UUID4_RE.match(v):
@@ -91,6 +106,13 @@ class TrajectoryPathDTO(BaseModel):
     @field_validator('blend_radius', mode='before')
     @classmethod
     def normalise_blend_radius(cls, v: object) -> float:
+        """Coerce negative ``blend_radius`` values to ``0.0``.
+
+        :param v: Raw value for ``blend_radius`` before Pydantic coercion.
+        :returns: ``0.0`` if the value is negative, otherwise the float value.
+        :rtype: float
+        :raises ValueError: If the value cannot be converted to a :class:`float`.
+        """
         try:
             f = float(v)  # type: ignore[arg-type]
         except (TypeError, ValueError):
@@ -99,7 +121,20 @@ class TrajectoryPathDTO(BaseModel):
 
     @classmethod
     def from_ros_msg(cls, ros_msg: TrajectoryPath) -> TrajectoryPathDTO:
-        """Construct a TrajectoryPathDTO from a TrajectoryPath ROS2 message."""
+        """Construct a :class:`TrajectoryPathDTO` from a :class:`~movement_controller.msg.TrajectoryPath` ROS 2 message.
+
+        Resolves ``motion_type`` and ``circ_type`` string values to their
+        respective :class:`~movement_controller.enums.MotionTypeEnum` and
+        :class:`~movement_controller.enums.CircTypeEnum` members.
+
+        :param ros_msg: ROS 2 message with all trajectory path fields populated.
+        :type ros_msg: TrajectoryPath
+        :returns: Validated, immutable :class:`TrajectoryPathDTO`.
+        :rtype: TrajectoryPathDTO
+        :raises ValueError: If ``motion_type`` is not a recognised
+            :class:`~movement_controller.enums.MotionTypeEnum` value, or if a
+            CIRC path has an absent or unrecognised ``circ_type``.
+        """
 
         try:
             motion_type = MotionTypeEnum(ros_msg.motion_type)
@@ -134,7 +169,9 @@ class TrajectoryPathDTO(BaseModel):
             target_pose=ros_msg.target_pose,
             blend_radius=ros_msg.blend_radius,
             cartesian_speed=ros_msg.cartesian_speed,
-            acceleration=ros_msg.acceleration,
+            cartesian_acceleration=ros_msg.cartesian_acceleration,
+            joint_speed=ros_msg.joint_speed,
+            joint_acceleration=ros_msg.joint_acceleration,
             tool_frame=ros_msg.tool_frame,
             circ_type=circ_type,
             circ_point=ros_msg.circ_point,

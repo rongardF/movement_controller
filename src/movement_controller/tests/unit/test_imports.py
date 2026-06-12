@@ -40,15 +40,6 @@ def test_msg_trajectory_path_importable():
     from movement_controller.msg import TrajectoryPath  # noqa: F401
 
 
-def test_srv_all_importable():
-    """Verify all 5 scene management service types are importable."""
-    from movement_controller.srv import AddObject  # noqa: F401
-    from movement_controller.srv import AttachObject  # noqa: F401
-    from movement_controller.srv import DetachObject  # noqa: F401
-    from movement_controller.srv import RemoveObject  # noqa: F401
-    from movement_controller.srv import ModifyAcm  # noqa: F401
-
-
 def test_python_subpackages_importable():
     """Verify Python sub-package stubs are importable."""
     import movement_controller  # noqa: F401

@@ -55,11 +55,6 @@ find_package(shape_msgs REQUIRED)
 rosidl_generate_interfaces(${PROJECT_NAME}
   "action/ExecuteTrajectory.action"
   "msg/TrajectoryPath.msg"
-  "srv/AddObject.srv"
-  "srv/AttachObject.srv"
-  "srv/DetachObject.srv"
-  "srv/RemoveObject.srv"
-  "srv/ModifyAcm.srv"
   DEPENDENCIES geometry_msgs shape_msgs
   SKIP_INSTALL
 )
@@ -77,6 +72,22 @@ install(
   DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/rosidl_generator_py/${PROJECT_NAME}/"
   DESTINATION
     "lib/python${Python3_VERSION_MAJOR}.${Python3_VERSION_MINOR}/site-packages/${PROJECT_NAME}"
+)
+
+# Install the generated C/C++ type support shared libraries that SKIP_INSTALL skipped.
+# These are required at runtime by any node (Python or C++) that uses these interfaces.
+install(
+  TARGETS
+    ${PROJECT_NAME}__rosidl_generator_c
+    ${PROJECT_NAME}__rosidl_typesupport_c
+    ${PROJECT_NAME}__rosidl_typesupport_cpp
+    ${PROJECT_NAME}__rosidl_typesupport_fastrtps_c
+    ${PROJECT_NAME}__rosidl_typesupport_fastrtps_cpp
+    ${PROJECT_NAME}__rosidl_typesupport_introspection_c
+    ${PROJECT_NAME}__rosidl_typesupport_introspection_cpp
+  ARCHIVE DESTINATION lib
+  LIBRARY DESTINATION lib
+  RUNTIME DESTINATION bin
 )
 
 # --------------------------------------------------------------------------
@@ -112,14 +123,29 @@ if(BUILD_TESTING)
     WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
   )
 
-  ament_add_pytest_test(test_ur_movement_controller
-    "tests/unit/test_ur_movement_controller.py"
+  ament_add_pytest_test(test_movement_controller
+    "tests/unit/test_movement_controller.py"
     APPEND_ENV PYTHONPATH=${CMAKE_CURRENT_BINARY_DIR}/rosidl_generator_py
     ENV PYTEST_ADDOPTS=--import-mode=importlib
     TIMEOUT 60
     WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
   )
 endif()
+
+# --------------------------------------------------------------------------
+# Install executable scripts
+# --------------------------------------------------------------------------
+install(
+  PROGRAMS scripts/movement_controller
+  DESTINATION lib/${PROJECT_NAME}
+)
+
+# --------------------------------------------------------------------------
+# Install launch, config and srdf files
+# --------------------------------------------------------------------------
+install(DIRECTORY config launch srdf
+  DESTINATION share/${PROJECT_NAME}
+)
 
 # --------------------------------------------------------------------------
 # Finalize

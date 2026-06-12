@@ -32,6 +32,7 @@ import math
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from movement_controller.enums import MotionTypeEnum
 from movement_controller.models import TrajectoryGoalDTO
 
 
@@ -81,6 +82,18 @@ class ConstraintConfigDTO(BaseModel):
         default=0.0,
         description='Node-level max cartesian speed cap. 0.0 = unconstrained. Goals with path.cartesian_speed exceeding this are rejected at _goal_callback.',
     )
+    max_cartesian_acceleration: float = Field(
+        default=0.0,
+        description='Node-level max cartesian acceleration cap. 0.0 = unconstrained. Goals with path.cartesian_acceleration exceeding this are rejected at _goal_callback.',
+    )
+    max_joint_speed: float = Field(
+        default=0.0,
+        description='Node-level max joint speed cap. 0.0 = unconstrained. Goals with path.joint_speed exceeding this are rejected at _goal_callback.',
+    )
+    max_joint_acceleration: float = Field(
+        default=0.0,
+        description='Node-level max joint acceleration cap. 0.0 = unconstrained. Goals with path.joint_acceleration exceeding this are rejected at _goal_callback.',
+    )
 
     @model_validator(mode='after')
     def _validate_workspace_bounds(self) -> 'ConstraintConfigDTO':
@@ -115,7 +128,16 @@ class ConstraintConfigDTO(BaseModel):
 
     @property
     def workspace_enabled(self) -> bool:
-        """Return True when workspace is NOT at full sentinel range (i.e., it is active)."""
+        """Check whether the workspace bounding-box constraint is active.
+
+        The constraint is considered active when the configured range on at
+        least one axis is tighter than the full sentinel range of ``2e9`` m
+        (i.e. bounds are not both at the ``±1e9`` sentinel values).
+
+        :returns: ``True`` when the workspace bound is tighter than the full
+            sentinel range on at least one axis.
+        :rtype: bool
+        """
         return not (
             self.x_max - self.x_min >= 2e9
             and self.y_max - self.y_min >= 2e9
@@ -124,12 +146,31 @@ class ConstraintConfigDTO(BaseModel):
 
     @property
     def joint_constraints_enabled(self) -> bool:
-        """Return True when at least one joint constraint name is specified."""
-        return len(self.joint_names) > 0
+        """Check whether joint position constraints are active.
+
+        Returns ``True`` when at least one joint name is configured and at
+        least one limit is tighter than the default ``±2π`` range, indicating
+        a meaningful constraint has been set.
+
+        :returns: ``True`` when joint constraints are configured and meaningful.
+        :rtype: bool
+        """
+        return (
+            len(self.joint_names) > 0 and
+            (
+                any(-6.28 < limit for limit in self.joint_lower_limits) or
+                any(limit < 6.28 for limit in self.joint_upper_limits)
+            )
+        )
 
     @property
     def orientation_constraint_enabled(self) -> bool:
-        """Return True when any orientation tolerance is tighter than 2*pi."""
+        """Check whether the orientation constraint is active.
+
+        :returns: ``True`` when any tolerance axis is tighter than ``2π`` radians
+            (the default unconstrained value).
+        :rtype: bool
+        """
         return (
             self.orientation_tolerance_x < 2 * math.pi
             or self.orientation_tolerance_y < 2 * math.pi
@@ -137,10 +178,23 @@ class ConstraintConfigDTO(BaseModel):
         )
     
     def validate_goal(self, trajectory_goal: TrajectoryGoalDTO) -> None:
-        """Validate that the given goal's constraints are compatible with this config, raising ValueError if not."""
+        """Validate all paths in a goal against the node-level speed/acceleration caps.
+
+        Checks each path's ``cartesian_speed``, ``cartesian_acceleration``,
+        ``joint_speed``, and ``joint_acceleration`` against the configured maxima.
+        A limit is only enforced when both the path value and the configured cap
+        are non-zero (``0.0`` is treated as unconstrained on either side).
+
+        :param trajectory_goal: Goal whose paths are to be validated.
+        :type trajectory_goal: TrajectoryGoalDTO
+        :raises ValueError: If any path exceeds a configured speed or
+            acceleration cap, with a human-readable message identifying the
+            offending path ID, value, and cap.
+        """
         for path in trajectory_goal.paths:
             if (
-                path.cartesian_speed > 0.0
+                path.motion_type in [MotionTypeEnum.LIN, MotionTypeEnum.CIRC]
+                and path.cartesian_speed > 0.0
                 and self.max_cartesian_speed > 0.0
                 and path.cartesian_speed > self.max_cartesian_speed
             ):
@@ -148,4 +202,40 @@ class ConstraintConfigDTO(BaseModel):
                     f"Path '{path.path_id}' cartesian_speed {path.cartesian_speed} m/s "
                     f"exceeds node maximum {self.max_cartesian_speed} m/s "
                     f"(constraints.max_cartesian_speed)"
+                )
+
+            if (
+                path.motion_type in [MotionTypeEnum.LIN, MotionTypeEnum.CIRC]
+                and path.cartesian_acceleration > 0.0
+                and self.max_cartesian_acceleration > 0.0
+                and path.cartesian_acceleration > self.max_cartesian_acceleration
+            ):
+                raise ValueError(
+                    f"Path '{path.path_id}' cartesian_acceleration {path.cartesian_acceleration} m/s² "
+                    f"exceeds node maximum {self.max_cartesian_acceleration} m/s² "
+                    f"(constraints.max_cartesian_acceleration)"
+                )
+            
+            if (
+                path.motion_type in [MotionTypeEnum.PTP]
+                and path.joint_speed > 0.0
+                and self.max_joint_speed > 0.0
+                and path.joint_speed > self.max_joint_speed
+            ):
+                raise ValueError(
+                    f"Path '{path.path_id}' joint_speed {path.joint_speed} rad/s "
+                    f"exceeds node maximum {self.max_joint_speed} rad/s "
+                    f"(constraints.max_joint_speed)"
+                )
+
+            if (
+                path.motion_type in [MotionTypeEnum.PTP]
+                and path.joint_acceleration > 0.0
+                and self.max_joint_acceleration > 0.0
+                and path.joint_acceleration > self.max_joint_acceleration
+            ):
+                raise ValueError(
+                    f"Path '{path.path_id}' joint_acceleration {path.joint_acceleration} rad/s² "
+                    f"exceeds node maximum {self.max_joint_acceleration} rad/s² "
+                    f"(constraints.max_joint_acceleration)"
                 )

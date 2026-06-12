@@ -28,12 +28,9 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
-
 from pydantic import BaseModel, ConfigDict, Field
 
-if TYPE_CHECKING:
-    from moveit_msgs.msg import RobotState
+from moveit_msgs.msg import RobotState
 
 from movement_controller.models.trajectory_path_dto import TrajectoryPathDTO
 
@@ -58,7 +55,15 @@ class PlanningSessionDTO(BaseModel):
     )
 
     def get_next_group(self) -> list[TrajectoryPathDTO] | None:
-        """Get the next group of TrajectoryPathDTOs to plan/execute, or None if all groups are done."""
+        """Pop and return the next group of paths to plan, updating :attr:`current_group`.
+
+        Mutates the session by removing the first group from :attr:`groups` and
+        storing it in :attr:`current_group`.
+
+        :returns: The next group of :class:`TrajectoryPathDTO` objects, or
+            ``None`` when all groups have been consumed.
+        :rtype: list[TrajectoryPathDTO] | None
+        """
         if self.groups:
             self.current_group = self.groups.pop(0)
             return self.current_group

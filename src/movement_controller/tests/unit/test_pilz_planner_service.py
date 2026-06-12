@@ -59,15 +59,15 @@ from movement_controller.services.pilz_planner_service import PilzPlannerService
 
 
 # Resolve TYPE_CHECKING-only forward references so Pydantic can instantiate these models in tests.
-# Use 'MagicMock' as the resolved type so it is accepted by the validator.
-PlanResultDTO.model_rebuild(_types_namespace={'MotionSequenceResponse': MagicMock})
-PlanningSessionDTO.model_rebuild(_types_namespace={'RobotState': MagicMock})
+# Use 'object' as the resolved type so it is accepted by the validator.
+PlanResultDTO.model_rebuild(_types_namespace={'MotionSequenceResponse': object})
+PlanningSessionDTO.model_rebuild(_types_namespace={'RobotState': object})
 
 _UUID = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'
 _UUID2 = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb'
 
-_SEQ_SRV = '/move_group/plan_sequence_path'
-_SCENE_SRV = '/move_group/get_planning_scene'
+_SEQ_SRV = 'plan_sequence_path'
+_SCENE_SRV = 'get_planning_scene'
 
 
 def _make_path_dto(**overrides) -> TrajectoryPathDTO:

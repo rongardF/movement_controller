@@ -28,12 +28,9 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
-
 from pydantic import BaseModel, ConfigDict, Field
 
-if TYPE_CHECKING:
-    from moveit_msgs.msg import RobotState
+from moveit_msgs.msg import RobotState
 
 from movement_controller.models.trajectory_path_dto import TrajectoryPathDTO
 

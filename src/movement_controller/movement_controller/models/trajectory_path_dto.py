@@ -29,7 +29,6 @@
 from __future__ import annotations
 
 import re
-from typing import TYPE_CHECKING
 
 from geometry_msgs.msg import Point, PoseStamped
 from pydantic import BaseModel, ConfigDict, Field, field_validator
@@ -37,8 +36,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 from movement_controller.enums.circ_type_enum import CircTypeEnum
 from movement_controller.enums.motion_type_enum import MotionTypeEnum
 
-if TYPE_CHECKING:
-    from movement_controller.msg import TrajectoryPath
+from movement_controller.msg import TrajectoryPath
 
 _UUID4_RE = re.compile(
     r'^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
@@ -62,9 +60,17 @@ class TrajectoryPathDTO(BaseModel):
         default=0.0,
         description='End-effector cartesian speed in m/s',
     )
-    acceleration: float = Field(
+    cartesian_acceleration: float = Field(
         default=0.0,
-        description='End-effector acceleration in m/s²',
+        description='End-effector cartesian acceleration in m/s²',
+    )
+    joint_speed: float = Field(
+        default=0.0,
+        description='End-effector joint speed in rad/s',
+    )
+    joint_acceleration: float = Field(
+        default=0.0,
+        description='End-effector joint acceleration in rad/s²',
     )
     tool_frame: str = Field(
         default='',
@@ -134,7 +140,9 @@ class TrajectoryPathDTO(BaseModel):
             target_pose=ros_msg.target_pose,
             blend_radius=ros_msg.blend_radius,
             cartesian_speed=ros_msg.cartesian_speed,
-            acceleration=ros_msg.acceleration,
+            cartesian_acceleration=ros_msg.cartesian_acceleration,
+            joint_speed=ros_msg.joint_speed,
+            joint_acceleration=ros_msg.joint_acceleration,
             tool_frame=ros_msg.tool_frame,
             circ_type=circ_type,
             circ_point=ros_msg.circ_point,

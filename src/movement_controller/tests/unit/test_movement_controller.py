@@ -24,7 +24,7 @@
 # CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
 # ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 # POSSIBILITY OF SUCH DAMAGE.
-"""Unit tests for URMovementController lifecycle and action server callbacks."""
+"""Unit tests for MovementController lifecycle and action server callbacks."""
 
 from unittest.mock import MagicMock, patch
 
@@ -47,7 +47,7 @@ from movement_controller.action import ExecuteTrajectory
 from movement_controller.models import PlanResultDTO, TrajectoryGoalDTO
 from movement_controller.models.constraint_config_dto import ConstraintConfigDTO
 from movement_controller.services import PilzPlannerService
-from movement_controller.ur_movement_controller import URMovementController
+from movement_controller.movement_controller import MovementController
 
 # Resolve TYPE_CHECKING forward reference so Pydantic can instantiate PlanResultDTO in tests.
 PlanResultDTO.model_rebuild(_types_namespace={'MotionSequenceResponse': object})
@@ -67,8 +67,8 @@ def ros_context():
 
 @pytest.fixture
 def node(ros_context):
-    """Create a fresh URMovementController node for each test."""
-    n = URMovementController()
+    """Create a fresh MovementController node for each test."""
+    n = MovementController()
     yield n
     n.destroy_node()
 
@@ -308,7 +308,7 @@ def test_cancel_callback_safe_when_planner_not_configured(node):
 def _set_array_constraint_params(node) -> None:
     """Set STRING_ARRAY / DOUBLE_ARRAY constraint params to empty lists.
 
-    These parameters are declared without defaults in URMovementController.__init__
+    These parameters are declared without defaults in MovementController.__init__
     (added in Phase 5 Plan 01). Tests that call on_configure() must initialize them
     to avoid ParameterUninitializedException.
     """
@@ -316,7 +316,6 @@ def _set_array_constraint_params(node) -> None:
         Parameter('constraints.joint.names', Parameter.Type.STRING_ARRAY, []),
         Parameter('constraints.joint.lower_limits', Parameter.Type.DOUBLE_ARRAY, []),
         Parameter('constraints.joint.upper_limits', Parameter.Type.DOUBLE_ARRAY, []),
-        Parameter('constraints.joint.max_velocities', Parameter.Type.DOUBLE_ARRAY, []),
     ])
 
 
@@ -327,7 +326,7 @@ def test_on_configure_creates_planner_service(node):
     mock_state = LifecycleState(label='unconfigured', state_id=0)
 
     with patch(
-        'movement_controller.ur_movement_controller.PilzPlannerService',
+        'movement_controller.movement_controller.PilzPlannerService',
         return_value=MagicMock(spec=PilzPlannerService),
     ):
         result = node.on_configure(mock_state)
@@ -343,12 +342,12 @@ def test_on_configure_uses_moveit_group_name_parameter(node):
     mock_state = LifecycleState(label='unconfigured', state_id=0)
 
     with patch(
-        'movement_controller.ur_movement_controller.PilzPlannerService',
+        'movement_controller.movement_controller.PilzPlannerService',
     ) as patched_cls:
         patched_cls.return_value = MagicMock(spec=PilzPlannerService)
         node.on_configure(mock_state)
         _, kwargs = patched_cls.call_args
-        assert kwargs.get('moveit_group_name') == 'ur_manipulator'
+        assert kwargs.get('moveit_group_name') == 'manipulator'
 
     node._planner_service = None  # reset
 
@@ -385,8 +384,8 @@ def test_on_activate_calls_planner_on_activate_and_wait_for_service(node):
     node._planner_service = mock_planner
     mock_state = LifecycleState(label='inactive', state_id=1)
 
-    with patch('movement_controller.ur_movement_controller.ActionServer'), \
-         patch('movement_controller.ur_movement_controller.ActionClient'):
+    with patch('movement_controller.movement_controller.ActionServer'), \
+         patch('movement_controller.movement_controller.ActionClient'):
         result = node.on_activate(mock_state)
 
     mock_planner.on_activate.assert_called_once()

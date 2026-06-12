@@ -13,11 +13,15 @@
     "--net=host",
     "--pid=host",
     "--ipc=host"
+    //"--device=/dev/dri"  - add this (and remove 'LIBGL_ALWAYS_SOFTWARE' env variable below) to use GPU/hardware acceleration
   ],
   "containerEnv": {
     "ROS_DOMAIN_ID": "42",
     "ROS_AUTOMATIC_DISCOVERY_RANGE": "LOCALHOST",
-    "RCUTILS_LOGGING_USE_STDOUT": "0"
+    "RCUTILS_LOGGING_USE_STDOUT": "0",
+    "DISPLAY": "${localEnv:DISPLAY}",
+    "QT_X11_NO_MITSHM": "1",
+    "LIBGL_ALWAYS_SOFTWARE": "1"
   },
   "customizations": {
     "vscode": {

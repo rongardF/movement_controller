@@ -28,12 +28,11 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
 
 from pydantic import BaseModel, ConfigDict, Field
 
-if TYPE_CHECKING:
-    from moveit_msgs.msg import MotionSequenceResponse
+
+from moveit_msgs.msg import MotionSequenceResponse
 
 
 class PlanResultDTO(BaseModel):
@@ -45,7 +44,7 @@ class PlanResultDTO(BaseModel):
 
     model_config = ConfigDict(arbitrary_types_allowed=True, frozen=True)
 
-    success: bool = Field(description='True if PILZ planning succeeded')
+    success: bool = Field(description='True if PILZ planning succeeded', default=False)
     error_message: str = Field(
         default='',
         description='Human-readable error; empty on success',

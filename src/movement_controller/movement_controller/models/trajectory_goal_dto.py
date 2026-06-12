@@ -28,14 +28,11 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
-
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from movement_controller.models.trajectory_path_dto import TrajectoryPathDTO
 
-if TYPE_CHECKING:
-    from movement_controller.action import ExecuteTrajectory
+from movement_controller.action import ExecuteTrajectory
 
 
 class TrajectoryGoalDTO(BaseModel):

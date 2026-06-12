@@ -10,6 +10,12 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     python3-rosdep \
     ros-jazzy-nav2-lifecycle-manager \
     sudo \
+    # Mesa OpenGL/DRI libraries required by RViz2 and Qt-based GUI tools.
+    # libgl1-mesa-dri provides both the hardware DRI drivers and the llvmpipe
+    # software renderer (used when LIBGL_ALWAYS_SOFTWARE=1 is set).
+    libgl1-mesa-dri \
+    libglx-mesa0 \
+    libegl-mesa0 \
     && rm -rf /var/lib/apt/lists/*
 
 # ── Non-root user (used by production profile) ─────────────────────────────

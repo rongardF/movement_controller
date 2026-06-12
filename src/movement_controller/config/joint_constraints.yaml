@@ -1,0 +1,22 @@
+# Set joint positional limits for the robot. Limits are set in radians and per
+# each vendor robot. Joint names must match the names in the URDF. 
+
+ur:
+  shoulder_pan_joint:
+    lower_limits: 2.0
+    upper_limits: 4.5
+  shoulder_lift_joint:
+    lower_limits: -2.0
+    upper_limits: -0.2
+  elbow_joint:
+    lower_limits: -2.25
+    upper_limits: -1.15
+  wrist_1_joint:
+    lower_limits: -4.71
+    upper_limits: -2.78
+  wrist_2_joint:
+    lower_limits: -2.55
+    upper_limits: -0.55
+  wrist_3_joint:
+    lower_limits: -3.12
+    upper_limits: 2.5

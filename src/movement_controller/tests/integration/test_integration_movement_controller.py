@@ -24,7 +24,7 @@
 # CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
 # ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 # POSSIBILITY OF SUCH DAMAGE.
-"""Integration tests for URMovementController + PilzPlannerService.
+"""Integration tests for MovementController + PilzPlannerService.
 
 These tests exercise the full stack with a real ROS2 middleware, replacing only
 the external move_group process with a minimal ``MockMoveGroupNode`` that provides:
@@ -66,7 +66,7 @@ from movement_controller.action import (
 )
 from movement_controller.models.constraint_config_dto import ConstraintConfigDTO
 from movement_controller.msg import TrajectoryPath
-from movement_controller.ur_movement_controller import URMovementController
+from movement_controller.movement_controller import MovementController
 
 # ---------------------------------------------------------------------------
 # Pydantic forward-reference resolution
@@ -101,7 +101,7 @@ _PATH_ID_3 = '00000000-0000-4000-8000-000000000003'
 class MockMoveGroupNode(Node):
     """Minimal mock that replaces move_group for integration testing.
 
-    Provides the three ROS2 interfaces consumed by URMovementController and
+    Provides the three ROS2 interfaces consumed by MovementController and
     PilzPlannerService.  All handlers are synchronous for simplicity.
 
     Attributes:
@@ -125,20 +125,20 @@ class MockMoveGroupNode(Node):
 
         self._scene_srv = self.create_service(
             GetPlanningScene,
-            '/move_group/get_planning_scene',
+            'get_planning_scene',
             self._handle_get_planning_scene,
             callback_group=cb,
         )
         self._plan_srv = self.create_service(
             GetMotionSequence,
-            '/move_group/plan_sequence_path',
+            'plan_sequence_path',
             self._handle_plan_sequence,
             callback_group=cb,
         )
         self._exec_action = ActionServer(
             self,
             MoveItExecuteTrajectory,
-            '/move_group/execute_trajectory',
+            'execute_trajectory',
             execute_callback=self._handle_execute_trajectory,
             goal_callback=lambda _: GoalResponse.ACCEPT,
             cancel_callback=lambda _: CancelResponse.REJECT,
@@ -252,23 +252,22 @@ def mock_move_group(executor):
 
 @pytest.fixture(scope='module')
 def controller(executor, mock_move_group):
-    """URMovementController configured and activated once for the module.
+    """MovementController configured and activated once for the module.
 
     ``mock_move_group`` is listed as a dependency to guarantee it is fully
     running before ``on_activate`` calls ``wait_for_service``.
     """
-    node = URMovementController()
+    node = MovementController()
     executor.add_node(node)
 
     # Initialize STRING_ARRAY / DOUBLE_ARRAY constraint parameters to empty lists.
-    # These are declared without defaults in URMovementController.__init__ (Phase 5 Plan 01)
+    # These are declared without defaults in MovementController.__init__ (Phase 5 Plan 01)
     # and raise ParameterUninitializedException if not set before on_configure().
     from rclpy.parameter import Parameter
     node.set_parameters([
         Parameter('constraints.joint.names', Parameter.Type.STRING_ARRAY, []),
         Parameter('constraints.joint.lower_limits', Parameter.Type.DOUBLE_ARRAY, []),
         Parameter('constraints.joint.upper_limits', Parameter.Type.DOUBLE_ARRAY, []),
-        Parameter('constraints.joint.max_velocities', Parameter.Type.DOUBLE_ARRAY, []),
     ])
 
     cfg_state = LifecycleState(label='unconfigured', state_id=0)

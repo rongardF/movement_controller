@@ -32,16 +32,16 @@
   <exec_depend>python3-pydantic</exec_depend>
 
   <!-- MoveIt2 -->
-  <exec_depend>moveit_py</exec_depend>
   <exec_depend>moveit_ros_planning_interface</exec_depend>
   <exec_depend>moveit_msgs</exec_depend>
 
   <!-- UR dependencies (UR-01, UR-02) -->
   <exec_depend>ur_robot_driver</exec_depend>
-  <exec_depend>ur_moveit_config</exec_depend>
+  <!-- <exec_depend>ur_moveit_config</exec_depend> -->
   
   <!-- Marks this package as containing ROS2 interface definitions -->
   <member_of_group>rosidl_interface_packages</member_of_group>
+  <exec_depend>rqt_graph</exec_depend>
 
   <!-- Test dependencies -->
   <test_depend>ament_cmake_pytest</test_depend>

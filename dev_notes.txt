@@ -1,0 +1,58 @@
+
+- we must launch UR robot related nodes
+- we must launch the moveit MoveGroup related nodes
+- we must launch the 'robot_arm_cartesian_movement_controller' node
+
+
+ros2 launch movement_controller robot_arm_cartesian_movement_controller.launch.py robot_ip:=127.0.1.1 debug:=true
+
+ros2 launch movement_controller new.launch.py robot_ip:=127.0.1.1 debug:=true
+
+DEBUGGING:
+- when the planner works (without joint constraints) then I can see following output:
+    [ur_movement_controller-12] [DEBUG] [1780554230.464600225] [rcl]: Client sending service request
+    [move_group-13] [INFO] [1780554230.465179763] [move_group.moveit.moveit.ros.move_group.capability]: Using planning pipeline 'pilz_industrial_motion_planner'
+    [move_group-13] [INFO] [1780554230.465684794] [move_group]: Calling PlanningRequestAdapter 'ResolveConstraintFrames'
+    [move_group-13] [INFO] [1780554230.466102357] [move_group]: Calling PlanningRequestAdapter 'ValidateWorkspaceBounds'
+    [move_group-13] [WARN] [1780554230.466132860] [move_group.moveit.moveit.ros.validate_workspace_bounds]: It looks like the planning volume was not specified. Using default values.
+    [move_group-13] [INFO] [1780554230.466167290] [move_group]: Calling PlanningRequestAdapter 'CheckStartStateBounds'
+    [move_group-13] [INFO] [1780554230.466234925] [move_group]: Calling PlanningRequestAdapter 'CheckStartStateCollision'
+    [move_group-13] [WARN] [1780554230.466482936] [move_group.moveit.moveit.planners.ompl.planning_context_manager]: Cannot find planning configuration for group 'ur_manipulator' using planner 'PTP'. Will use defaults instead.
+    [move_group-13] [INFO] [1780554230.467451705] [move_group.moveit.moveit.planners.ompl.model_based_planning_context]: Planner configuration 'ur_manipulator' will use planner 'geometric::RRTConnect'. Additional configuration parameters will be set when the planner is constructed.
+    [move_group-13] [INFO] [1780554230.467718501] [move_group]: Calling Planner 'OMPL'
+    [move_group-13] [INFO] [1780554230.485713150] [move_group]: Calling PlanningResponseAdapter 'AddTimeOptimalParameterization'
+    [move_group-13] [INFO] [1780554230.487676003] [move_group]: Calling PlanningResponseAdapter 'ValidateSolution'
+    [move_group-13] [INFO] [1780554230.488100009] [move_group]: Calling PlanningResponseAdapter 'DisplayMotionPath'
+    [ur_movement_controller-12] [DEBUG] [1780554230.488863109] [rcl]: Initializing wait set with '2' subscriptions, '2' guard conditions, '1' timers, '4' clients, '15' services
+    [ur_movement_controller-12] [DEBUG] [1780554230.489057074] [rcl]: Client taking service response
+- joint positions from lab robot in home
+    3.25 rad/ 186.2 deg
+    -1.45 rad/ -83 deg
+    -1.75 rad/ -100.3 deg
+    -3.14 rad/ -179.9 deg
+    -1.55 rad/ -88.8 deg
+    -0.37 rad/ -21.2 deg
+- joint limits TODO: calcualte actual limits using joitn positions- values below are relative!
+    1.25 rad/ 71.2 deg - 1.25 rad/ 71.2 deg
+    0.55 rad/ 31.5 deg - 1.25 rad/ 71.2 deg
+    0.5 rad/ 28.6 deg - 0.6 rad/ 34.4 deg
+    1.57 rad/ 90 deg - 0.36 rad/ 21 deg
+    1.0 rad/ 57.3 deg - 1.0 rad/ 57.3 deg
+    1.0 rad/ 57.3 deg - 1.0 rad/ 57.3 deg
+- lab robot home pose (cartesian)
+    target.pose.position.x = 0.71984
+    target.pose.position.y = -0.10547
+    target.pose.position.z = 0.58513
+    target.pose.orientation.x = 0.35728
+    target.pose.orientation.y = 0.56644
+    target.pose.orientation.z = 0.44363
+    target.pose.orientation.w = 0.59556
+
+
+current: 0.084548, -0.141187, 0.690993
+quaternion actual: 0.230136 0.888626 0.344757 -0.196275
+start position: 3.2498030000000107, -1.4486229999999907, -1.750564999999991, -3.139846999999989, -1.5498519999999871, -0.37001000000000417
+
+CONTINUE:
+- test out the node with linear movement from random place inside the workplace
+- remove the old launch file from the package

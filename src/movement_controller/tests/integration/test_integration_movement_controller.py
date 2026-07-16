@@ -316,7 +316,7 @@ def _make_lin_path(path_id: str, blend_radius: float = 0.0) -> TrajectoryPath:
     path.target_pose.pose.orientation.w = 1.0
     path.circ_point = Point()
     path.cartesian_speed = 0.0
-    path.acceleration = 0.0
+    path.cartesian_acceleration = 0.0
     path.tool_frame = ''
     path.circ_type = 'interim'
     return path

@@ -37,8 +37,10 @@ from launch.actions import (
 )
 from launch.event_handlers import OnProcessExit
 from launch.substitutions import (
+    IfElseSubstitution,
     LaunchConfiguration,
     PathJoinSubstitution,
+    PythonExpression,
 )
 
 from launch_ros.actions import Node
@@ -53,6 +55,12 @@ def generate_launch_description():
     # declare launch configurations
     model = LaunchConfiguration("model")
     robot_ip = LaunchConfiguration("robot_ip")
+    hardware_mode = LaunchConfiguration("hardware_mode")
+
+    # 'mock_hardware' → use_mock_hardware=true; 'real_hardware' → false
+    use_mock_hardware = PythonExpression(
+        ["'true' if '", hardware_mode, "' == 'mock_hardware' else 'false'"]
+    )
 
     ld = LaunchDescription()
 
@@ -65,6 +73,7 @@ def generate_launch_description():
             "robot_ip": robot_ip,
             "launch_rviz": "false",
             "headless_mode": "true",
+            "use_mock_hardware": use_mock_hardware,
             "initial_joint_controller": "joint_trajectory_controller",
         }.items(),
     )

@@ -26,6 +26,11 @@ services:
       - QT_X11_NO_MITSHM=1
       - XAUTHORITY=$XAUTH
       - LIBGL_ALWAYS_SOFTWARE=1                  # Use Mesa llvmpipe; remove if you want GPU rendering via /dev/dri
+      - MESA_GL_VERSION_OVERRIDE=3.3             # Tell Ogre2 that OpenGL 3.3 is available via llvmpipe
+      - MESA_GLSL_VERSION_OVERRIDE=330
+      - QSG_RENDER_LOOP=basic                    # Use basic Qt Quick render loop; avoids threading issues in containers
+      - GZ_SIM_GUI_CONFIG_PATH=/workspaces/movement_controller/config/gz/gui.config
+      - GZ_IP=127.0.0.1                          # Pin gz-transport to loopback; avoids network interface confusion in containers
     volumes:
       - .:/workspaces/movement_controller:rw   # Live source mount (symlink-install works)
       - /tmp/.X11-unix:/tmp/.X11-unix:rw

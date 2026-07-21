@@ -1,0 +1,100 @@
+<!--
+  URDF / xacro snippet — UR10 Calibration Board
+  ==============================================
+  Paste the <xacro:include> and <xacro:calibration_board> calls into your
+  robot URDF, or include the whole file as a standalone URDF.
+
+  ROS package layout assumed:
+    <your_pkg>/urdf/calibration_board.urdf.xacro   ← this file
+    <your_pkg>/meshes/calibration_board.dae         ← exported from Blender
+    <your_pkg>/textures/calibration_board_texture.png
+
+  TF frame
+    The board link origin is at the geometric centre of the board.
+    Z+ points away from the printed surface (same as the SDF convention).
+
+  Board parameters (hard-coded — edit if needed)
+    Full size:   0.258 m × 0.392 m × 0.003 m
+    Squares:     17 × 23 × 14 mm
+    Inner corners (OpenCV pattern_size): (16, 22)
+    Square size:  0.014 m
+-->
+<?xml version="1.0"?>
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro" name="calibration_board">
+
+  <!-- ── Parameters ─────────────────────────────────────────────────── -->
+  <xacro:property name="board_width"  value="0.258"/>  <!-- X -->
+  <xacro:property name="board_height" value="0.392"/>  <!-- Y -->
+  <xacro:property name="board_thick"  value="0.003"/>  <!-- Z -->
+  <xacro:property name="board_mass"   value="0.180"/>  <!-- kg -->
+
+  <!-- ── Material ───────────────────────────────────────────────────── -->
+  <material name="board_white">
+    <color rgba="1 1 1 1"/>
+  </material>
+
+  <!-- ── Macro definition ───────────────────────────────────────────── -->
+  <!--
+    Usage:
+      <xacro:calibration_board
+          parent="world"
+          board_name="calib_board">
+        <origin xyz="0 0 0" rpy="0 0 0"/>
+      </xacro:calibration_board>
+  -->
+  <xacro:macro name="calibration_board"
+               params="parent board_name:=calibration_board *origin">
+
+    <!-- Fixed joint attaching the board to the parent frame -->
+    <joint name="${board_name}_joint" type="fixed">
+      <parent link="${parent}"/>
+      <child  link="${board_name}_link"/>
+      <xacro:insert_block name="origin"/>
+    </joint>
+
+    <link name="${board_name}_link">
+
+      <!-- Visual -->
+      <visual>
+        <origin xyz="0 0 0" rpy="0 0 0"/>
+        <geometry>
+          <!-- Prefer the Collada mesh exported from Blender if available -->
+          <!-- <mesh filename="package://YOUR_PKG/meshes/calibration_board.dae"/> -->
+          <!-- Fallback: simple box primitive -->
+          <box size="${board_width} ${board_height} ${board_thick}"/>
+        </geometry>
+        <material name="board_white"/>
+      </visual>
+
+      <!-- Collision -->
+      <collision>
+        <origin xyz="0 0 0" rpy="0 0 0"/>
+        <geometry>
+          <box size="${board_width} ${board_height} ${board_thick}"/>
+        </geometry>
+      </collision>
+
+      <!-- Inertial (thin flat plate) -->
+      <inertial>
+        <mass value="${board_mass}"/>
+        <origin xyz="0 0 0" rpy="0 0 0"/>
+        <inertia
+          ixx="${board_mass * (board_height*board_height + board_thick*board_thick) / 12}"
+          iyy="${board_mass * (board_width*board_width  + board_thick*board_thick) / 12}"
+          izz="${board_mass * (board_width*board_width  + board_height*board_height) / 12}"
+          ixy="0" ixz="0" iyz="0"/>
+      </inertial>
+
+    </link>
+
+  </xacro:macro>
+
+  <!-- ── Standalone usage (when run as a top-level URDF) ────────────── -->
+  <link name="world"/>
+
+  <xacro:calibration_board parent="world" board_name="calibration_board">
+    <origin xyz="0 0 0.0015" rpy="0 0 0"/>
+    <!-- Z offset of 0.0015 = half thickness, so bottom face rests at Z=0 -->
+  </xacro:calibration_board>
+
+</robot>

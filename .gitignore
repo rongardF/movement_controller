@@ -17,3 +17,5 @@ __pycache__/
 .DS_Store
 .planning/
 dev_notes.txt
+sandbox_*
+test_node_*

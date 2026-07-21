@@ -78,12 +78,13 @@ def declare_arguments() -> list[DeclareLaunchArgument]:
             default_value="192.168.1.9",
             description="IP address of the robot controller",
         ),
-        DeclareLaunchArgument("rviz", default_value="true", description="Launch RViz?"),
         DeclareLaunchArgument(
-            "use_sim_time",
-            default_value="false",
-            description="Using or not time from simulation",
+            "hardware_mode",
+            choices=["gz_simulation", "real_hardware", "mock_hardware"],
+            default_value="mock_hardware",
+            description="Is hardware simulated (gazebo or mock) or is real hardware used?",
         ),
+        DeclareLaunchArgument("rviz", default_value="true", description="Launch RViz?"),
         DeclareLaunchArgument(
             "publish_robot_description_semantic",
             default_value="true",
@@ -263,12 +264,15 @@ def setup_robot_nodes(context, *args, **kwargs):
     matching robot family and its MoveIt configuration.
     """
     model_value = LaunchConfiguration("model").perform(context)
+    hardware_mode_value = LaunchConfiguration("hardware_mode").perform(context)
     rviz = LaunchConfiguration("rviz")
-    use_sim_time = LaunchConfiguration("use_sim_time")
     publish_robot_description_semantic = LaunchConfiguration(
         "publish_robot_description_semantic"
     )
     debug = LaunchConfiguration("debug")
+
+    # gz_simulation uses Gazebo's clock; real/mock use wall time
+    sim_time_used = hardware_mode_value == "gz_simulation"
 
     family = get_robot_family(model_value)
     moveit_config = build_moveit_config(family, model_value)
@@ -282,7 +286,7 @@ def setup_robot_nodes(context, *args, **kwargs):
         parameters=[
             moveit_config.to_dict(),
             {
-                "use_sim_time": use_sim_time,
+                "use_sim_time": sim_time_used,
                 "publish_robot_description_semantic": publish_robot_description_semantic,
             },
         ],
@@ -305,7 +309,7 @@ def setup_robot_nodes(context, *args, **kwargs):
             moveit_config.planning_pipelines,
             moveit_config.joint_limits,
             {
-                "use_sim_time": use_sim_time,
+                "use_sim_time": sim_time_used,
             },
         ],
     )
@@ -330,13 +334,19 @@ def setup_robot_nodes(context, *args, **kwargs):
         ],
     )
 
-    # start MoveGroup, RViz and the movement controller only once the robot
-    # launcher signals (via the custom event) that it is ready
+    nodes = [move_group_node, rviz_node, movement_controller]
+
+    # gz_simulation: Gazebo owns the controller_manager and robot_state_publisher,
+    # so start MoveIt nodes directly — there is no ur.launch.py to emit robot_launched.
+    # real/mock hardware: ur.launch.py emits robot_launched once the driver is ready.
+    if sim_time_used:
+        return nodes
+    
     return [
         RegisterEventHandler(
             EventHandler(
                 matcher=lambda event: event.name == "robot_launched",
-                entities=[move_group_node, rviz_node, movement_controller],
+                entities=nodes,
             )
         )
     ]
@@ -346,6 +356,7 @@ def generate_launch_description():
     # declare launch configurations
     model = LaunchConfiguration("model")
     robot_ip = LaunchConfiguration("robot_ip")
+    hardware_mode = LaunchConfiguration("hardware_mode")
 
     # create launch description with declared launch arguments
     ld = LaunchDescription(declare_arguments())
@@ -358,9 +369,13 @@ def generate_launch_description():
         launch_arguments={
             "ur_type": model,
             "robot_ip": robot_ip,
+            "hardware_mode": hardware_mode,
         }.items(),
         condition=IfCondition(
-            PythonExpression(["'", model, "' in ", str(ROBOT_TYPES["ur"])])
+            PythonExpression([
+                "'", model, "' in ", str(ROBOT_TYPES["ur"]),
+                " and '", hardware_mode, "' != 'gz_simulation'",
+            ])
         ),
     )
     ld.add_action(ur_control_launch)

@@ -137,3 +137,78 @@ When implementing any phase with hardware-commanding code:
 - [ ] Hardware interface has a fake/stub implementation loadable by the simulation launch
 - [ ] All time references use `self.get_clock().now()`, not `time.time()`
 - [ ] Node is included in `sim_basic.launch.py` (or planned for the correct sim launch target)
+
+---
+
+## Troubleshooting
+
+### Gazebo `gazebo-4` segfault when loading a custom COLLADA (`.dae`) mesh
+
+**Symptom**
+
+Launching Gazebo (e.g. `ros2 launch ur_gazebo_simulation ur_sim_control.launch.py ...`)
+crashes with a line like:
+
+```
+[gazebo-4] Segmentation fault (Address not mapped to object [0x........])
+```
+
+The crash is often **intermittent** and only happens when the GUI/rendering is active
+(`gazebo_gui:=true`). Commenting out the `<visual>` block that references the custom
+mesh makes it "go away" — which is misleading. The fault address sometimes looks like
+ASCII text (e.g. `0x36323732` = "2762"), a hint that raw data is being read as a pointer.
+
+**Root cause**
+
+`gz-common`'s COLLADA loader (`ColladaLoader::LoadPolylist`) **null-derefs when a
+`<polylist>` has its `VERTEX` and `NORMAL` inputs sharing the same `offset="0"`.**
+Meshes exported by browser/JS tools (THREE.js `GLTFExporter` → Assimp) commonly emit
+this shared-offset form. The stock UR meshes work because they give `NORMAL` its own
+`offset="1"`.
+
+Only the **render** path hits this — the physics server (`gz sim -s -r`) and collision
+`.stl` load fine, which is why it presents as GUI-only and intermittent.
+
+**How to diagnose (fast)**
+
+1. Reproduce in isolation with a real display, watching for the crash within ~12 s:
+   ```bash
+   export DISPLAY=:1   # or your virtual/X display
+   cat > /tmp/t.sdf <<'EOF'
+   <?xml version="1.0"?>
+   <sdf version="1.9"><world name="t"><model name="m"><static>true</static>
+   <link name="l"><visual name="v"><geometry><mesh>
+   <uri>file:///ABS/PATH/to/your_mesh.dae</uri>
+   </mesh></geometry></visual></link></model></world></sdf>
+   EOF
+   gz sim -r -v 2 /tmp/t.sdf         # crashes ~12s in if the mesh is bad
+   ```
+   A backtrace (install `gdb`; Gazebo auto-prints a stack on crash) will show:
+   `ColladaLoader::LoadPolylist → LoadGeometry → LoadNode → MeshManager::Load → loadMesh`.
+
+2. Confirm the mesh structure is the shared-offset form:
+   ```bash
+   grep -E '<input .*semantic="(VERTEX|NORMAL)"' your_mesh.dae
+   # BAD  -> both show offset="0"
+   # GOOD -> NORMAL shows offset="1"
+   ```
+
+**Fix**
+
+Rewrite the `<polylist>` so `NORMAL` has its own offset and the index array (`<p>`)
+carries a per-vertex normal index. When normals align 1:1 with positions (the common
+case for these exports), the normal index equals the vertex index, so each index `i`
+in `<p>` becomes the pair `i i`:
+
+```python
+# 1) NORMAL input: offset="0" -> offset="1"
+# 2) <p> stride 1 -> 2:  "a b c ..."  ->  "a a b b c c ..."
+```
+
+Then verify `sum(vcount) * stride == len(p)` and `max(index) < accessor_count`, and
+re-run the isolation repro above (should survive several launches with no crash).
+Apply the corrected mesh to **both** `src/` and the built `install/` copy (or rebuild
+with `colcon build --symlink-install`).
+
+> Prefer fixing the mesh over exporting to OBJ, so the DAE keeps its `up_axis` and the
+> URDF `<visual>` `origin`/`rpy` stays valid.

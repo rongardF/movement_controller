@@ -1,0 +1,97 @@
+<?xml version="1.0"?>
+<!--
+  Gazebo SDF model — UR10 Robotiq Calibration Board
+  ==================================================
+  Board specs
+    Squares:     17 cols × 23 rows
+    Square size: 14 mm = 0.014 m
+    Chessboard:  238 mm × 322 mm
+    Full board:  258 mm × 392 mm × 3 mm
+    Mass:        ~180 g  (FR4/aluminium composite)
+
+  Frame convention
+    Origin  = centre of the board, top (printed) face = Z+ direction
+    X+      = along board width  (17 squares)
+    Y+      = along board height (23 squares)
+    Z+      = normal pointing away from the printed surface
+
+  Usage in a world file:
+    <include>
+      <uri>model://calibration_board</uri>
+      <pose>0 0 0  0 0 0</pose>
+    </include>
+
+  Place the model directory (containing this file + model.config + texture)
+  inside one of the paths in $GAZEBO_MODEL_PATH, e.g.:
+    ~/.gazebo/models/calibration_board/
+-->
+<sdf version="1.6">
+  <model name="calibration_board">
+
+    <!-- ─── Static (non-moving) board ─────────────────────────────────── -->
+    <static>true</static>
+
+    <link name="board_link">
+
+      <!-- ── Inertia (required even for static models in some Gazebo versions) -->
+      <inertial>
+        <mass>0.180</mass>
+        <!-- Thin flat plate: I = m*(w²+h²)/12 -->
+        <inertia>
+          <ixx>0.00230</ixx>   <!-- m*(H²+T²)/12 -->
+          <iyy>0.00099</iyy>   <!-- m*(W²+T²)/12 -->
+          <izz>0.00326</izz>   <!-- m*(W²+H²)/12 -->
+          <ixy>0</ixy>
+          <ixz>0</ixz>
+          <iyz>0</iyz>
+        </inertia>
+      </inertial>
+
+      <!-- ── Visual: textured flat box ───────────────────────────────── -->
+      <visual name="board_visual">
+        <geometry>
+          <box>
+            <!-- X = width 258 mm, Y = height 392 mm, Z = thickness 3 mm -->
+            <size>0.258 0.392 0.003</size>
+          </box>
+        </geometry>
+        <material>
+          <ambient>1 1 1 1</ambient>
+          <diffuse>1 1 1 1</diffuse>
+          <specular>0.1 0.1 0.1 1</specular>
+          <pbr>
+            <metal>
+              <albedo_map>model://calibration_board/calibration_board_texture.png</albedo_map>
+              <metalness>0.0</metalness>
+              <roughness>0.9</roughness>
+            </metal>
+          </pbr>
+        </material>
+      </visual>
+
+      <!-- ── Collision: same box ──────────────────────────────────────── -->
+      <collision name="board_collision">
+        <geometry>
+          <box>
+            <size>0.258 0.392 0.003</size>
+          </box>
+        </geometry>
+        <surface>
+          <contact>
+            <ode>
+              <kp>1e6</kp>
+              <kd>100</kd>
+            </ode>
+          </contact>
+          <friction>
+            <ode>
+              <mu>0.8</mu>
+              <mu2>0.8</mu2>
+            </ode>
+          </friction>
+        </surface>
+      </collision>
+
+    </link>
+  </model>
+</sdf>

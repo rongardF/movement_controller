@@ -187,6 +187,9 @@ def launch_setup(context, *args, **kwargs):
             "hardware_mode": "gz_simulation",
             "rviz": rviz,
             "debug": debug,
+            "srdf_file": PathJoinSubstitution(
+                [FindPackageShare("ur_gazebo_simulation"), "srdf", "ur_default_setup.srdf.xacro"]
+            ),
         }.items(),
     )
 

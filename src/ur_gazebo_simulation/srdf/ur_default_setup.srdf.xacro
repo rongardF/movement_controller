@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    Semantic description for the Gazebo "default setup" of the UR arm.
+
+    This mirrors ur.srdf.xacro (groups, states and the base UR allowed-collision
+    matrix) but additionally declares the allowed collisions introduced by the
+    extra links defined in ur_gazebo_simulation/urdf/ur_default_setup.urdf.xacro:
+
+      * station         - pedestal the arm base is mounted on
+      * tool_mount_link - adapter rigidly attached to tool0
+
+    Without these entries MoveIt treats the arm as permanently self-colliding
+    (base resting on the station, wrist inside the tool mount) and refuses to
+    plan. This file lives in the ur_gazebo_simulation package and is passed to
+    the movement_controller launch via its `srdf_file` argument (see
+    ur_sim_control.launch.py).
+-->
+<robot xmlns:xacro="http://wiki.ros.org/xacro" name="$(arg name)">
+
+  <!-- robot name parameter -->
+  <xacro:arg name="name" default="ur"/>
+
+  <!-- base UR semantics: groups, group states and the standard arm ACM -->
+  <xacro:include filename="$(find movement_controller)/srdf/ur_macro.srdf.xacro"/>
+  <xacro:ur_srdf/>
+
+  <!-- ==== Allowed collisions for the Gazebo default-setup extras ==== -->
+
+  <!-- station: pedestal the arm base is mounted on -->
+  <disable_collisions link1="station" link2="ground_plane" reason="Adjacent" />
+  <disable_collisions link1="station" link2="base_link" reason="Adjacent" />
+  <disable_collisions link1="station" link2="base_link_inertia" reason="Adjacent" />
+  <disable_collisions link1="station" link2="shoulder_link" reason="Never" />
+
+  <!-- tool_mount_link: adapter rigidly attached to tool0 -->
+  <disable_collisions link1="tool_mount_link" link2="tool0" reason="Adjacent" />
+  <disable_collisions link1="tool_mount_link" link2="flange" reason="Never" />
+  <disable_collisions link1="tool_mount_link" link2="wrist_1_link" reason="Never" />
+  <disable_collisions link1="tool_mount_link" link2="wrist_2_link" reason="Never" />
+  <disable_collisions link1="tool_mount_link" link2="wrist_3_link" reason="Never" />
+
+</robot>

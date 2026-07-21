@@ -3,7 +3,7 @@ project(ur_gazebo_simulation)
 
 find_package(ament_cmake REQUIRED)
 
-install(DIRECTORY config launch urdf world model
+install(DIRECTORY config launch srdf urdf world model
   DESTINATION share/${PROJECT_NAME}
 )
 

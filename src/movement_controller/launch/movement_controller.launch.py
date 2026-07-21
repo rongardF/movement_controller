@@ -90,6 +90,14 @@ def declare_arguments() -> list[DeclareLaunchArgument]:
             default_value="true",
             description="MoveGroup publishes robot description semantic",
         ),
+        DeclareLaunchArgument(
+            "srdf_file",
+            default_value=str(Path("srdf") / "ur.srdf.xacro"),
+            description=(
+                "Path to the SRDF (xacro) file used to build the robot "
+                "description semantic, relative to the package share directory"
+            ),
+        ),
         
         DeclareLaunchArgument(
             "debug",
@@ -112,13 +120,13 @@ def get_robot_family(model_value: str) -> str:
     )
 
 
-def build_moveit_config(family: str, model_value: str):
+def build_moveit_config(family: str, model_value: str, srdf_file: str):
     """Build the MoveIt configuration for the given robot family."""
     if family == "ur":
         return (
             MoveItConfigsBuilder(robot_name=f"{model_value}_robot", package_name="movement_controller")
             .robot_description_semantic(
-                str(Path("srdf") / "ur.srdf.xacro"), {"name": model_value}
+                srdf_file, {"name": model_value}
             )
             .pilz_cartesian_limits()
             .planning_pipelines(
@@ -265,6 +273,7 @@ def setup_robot_nodes(context, *args, **kwargs):
     """
     model_value = LaunchConfiguration("model").perform(context)
     hardware_mode_value = LaunchConfiguration("hardware_mode").perform(context)
+    srdf_file_value = LaunchConfiguration("srdf_file").perform(context)
     rviz = LaunchConfiguration("rviz")
     publish_robot_description_semantic = LaunchConfiguration(
         "publish_robot_description_semantic"
@@ -275,7 +284,7 @@ def setup_robot_nodes(context, *args, **kwargs):
     sim_time_used = hardware_mode_value == "gz_simulation"
 
     family = get_robot_family(model_value)
-    moveit_config = build_moveit_config(family, model_value)
+    moveit_config = build_moveit_config(family, model_value, srdf_file_value)
     speed_and_acceleration_constraints = load_speed_and_acceleration_constraints(family)
     joint_constraints = load_joint_constraints(family)
 

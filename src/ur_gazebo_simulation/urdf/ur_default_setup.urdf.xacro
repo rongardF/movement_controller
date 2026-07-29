@@ -52,27 +52,23 @@
     <child link="ground_plane"/>
   </joint>
 
-  <!-- station: 1x1x1m box pedestal on which the robot is mounted -->
+  <!-- station pedestal on which the robot is mounted -->
   <link name="station">
     <visual>
-      <origin xyz="0 0 0.5" rpy="0 0 0"/>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
       <geometry>
-        <box size="1 1 1"/>
+        <mesh filename="file://$(find ur_gazebo_simulation)/model/station/meshes/station_visual.dae"/>
       </geometry>
-      <material name="station_grey">
-        <color rgba="0.5 0.5 0.5 1.0"/>
-      </material>
     </visual>
     <collision>
-      <origin xyz="0 0 0.5" rpy="0 0 0"/>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
       <geometry>
-        <box size="1 1 1"/>
+        <mesh filename="file://$(find ur_gazebo_simulation)/model/station/meshes/station_collision.stl"/>
       </geometry>
     </collision>
     <inertial>
       <origin xyz="0 0 0.5" rpy="0 0 0"/>
       <mass value="100.0"/>
-      <!-- inertia of a solid box: I = m/12 * (h²+d²) etc. for 1x1x1m, 100kg -->
       <inertia ixx="16.667" ixy="0" ixz="0" iyy="16.667" iyz="0" izz="16.667"/>
     </inertial>
   </link>
@@ -97,21 +93,21 @@
     safety_k_position="$(arg safety_k_position)"
     force_abs_paths="true"
     >
-    <origin xyz="0 0 1.0" rpy="0 0 0" />          <!-- position robot on top of station -->
+    <origin xyz="0.3 0 0.90001" rpy="0 0 0" />          <!-- position robot on top of station -->
   </xacro:ur_robot>
 
   <!-- tool mount attached to tool0 -->
   <link name="tool_mount_link">
     <visual>
-      <origin xyz="0 0 0" rpy="0 -1.57 -1.57"/>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
       <geometry>
-        <mesh filename="file://$(find ur_gazebo_simulation)/model/tool_mount/meshes/tool_mount_visual.dae"/>
+        <mesh filename="file://$(find ur_gazebo_simulation)/model/tool_mount/meshes/tool_mount_with_camera_visual.dae"/>
       </geometry>
     </visual>
     <collision>
-      <origin xyz="0 0 0" rpy="0 -1.57 -1.57"/>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
       <geometry>
-        <mesh filename="file://$(find ur_gazebo_simulation)/model/tool_mount/meshes/tool_mount_collision.stl"/>
+        <mesh filename="file://$(find ur_gazebo_simulation)/model/tool_mount/meshes/tool_mount_with_camera_collision.stl"/>
       </geometry>
     </collision>
     <inertial>
@@ -124,6 +120,81 @@
     <parent link="$(arg tf_prefix)tool0"/>
     <child link="tool_mount_link"/>
     <origin xyz="0 0 0" rpy="0 0 0"/>
+  </joint>
+
+  <!-- Gazebo (Harmonic / gz-sim) Camera Sensor.
+       Rendering is handled by the gz-sim-sensors-system plugin loaded in the
+       world (default.world). The sensor publishes on a Gazebo Transport topic;
+       it is bridged to ROS 2 via ros_gz_bridge in the launch file.
+       Image topic:       /basler_camera/image
+       CameraInfo topic:  /basler_camera/camera_info (auto, sibling of image) -->
+<gazebo reference="tool_mount_link">
+  <sensor name="basler_camera" type="camera">
+    <pose>0.0700233 -0.127701 -0.0225334 0 0 -1.57</pose>
+    <always_on>true</always_on>
+    <update_rate>30.0</update_rate>
+    <visualize>true</visualize>
+    <topic>/basler_camera/image</topic>
+    <gz_frame_id>tool_mount_link</gz_frame_id>
+    <camera name="basler_camera_sensor">
+      <horizontal_fov>1.0472</horizontal_fov> <!-- ~60 degrees -->
+      <image>
+        <width>1920</width>
+        <height>1080</height>
+        <format>R8G8B8</format>
+      </image>
+      <clip>
+        <near>0.01</near>
+        <far>100.0</far>
+      </clip>
+      <noise>
+        <type>gaussian</type>
+        <mean>0.0</mean>
+        <stddev>0.007</stddev>
+      </noise>
+      <!-- Lens distortion (Brown-Conrady / plumb-bob model, same as OpenCV).
+           k1/k2/k3: radial coefficients  (negative k1 = barrel distortion).
+           p1/p2:    tangential coefficients.
+           center:   normalised distortion centre (0.5 0.5 = optical centre).
+           Tune these to match the real Basler lens calibration output. -->
+      <distortion>
+        <k1>-0.2477771909786335</k1>
+        <k2>0.126037678472415</k2>
+        <k3>-0.0010056044464992401</k3>
+        <p1>0.000391226451080845</p1>
+        <p2>-0.04092116227683235</p2>
+        <center>0.5 0.5</center>
+      </distortion>
+      <optical_frame_id>tool_mount_link</optical_frame_id>
+    </camera>
+  </sensor>
+</gazebo>
+
+  <!-- conveyor belt fixed to world frame -->
+  <link name="conveyor">
+    <visual>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry>
+        <mesh filename="file://$(find ur_gazebo_simulation)/model/conveyor/meshes/conveyor_visual.dae"/>
+      </geometry>
+    </visual>
+    <collision>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry>
+        <mesh filename="file://$(find ur_gazebo_simulation)/model/conveyor/meshes/conveyor_collision.stl"/>
+      </geometry>
+    </collision>
+    <inertial>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <mass value="50.0"/>
+      <inertia ixx="1.0" ixy="0" ixz="0" iyy="1.0" iyz="0" izz="1.0"/>
+    </inertial>
+  </link>
+
+  <joint name="conveyor_joint" type="fixed">
+    <origin xyz="1.2 -0.475 0" rpy="0 0 0"/>
+    <parent link="world"/>
+    <child link="conveyor"/>
   </joint>
 
   <gazebo reference="world">

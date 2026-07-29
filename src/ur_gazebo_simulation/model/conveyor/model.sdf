@@ -1,6 +1,6 @@
 <?xml version="1.0" ?>
 <sdf version="1.6">
-  <model name="tool_mount">
+  <model name="conveyor">
     <link name="link">
       <inertial>
         <mass>1</mass>
@@ -8,7 +8,7 @@
       <collision name="collision">
         <geometry>
           <mesh>
-            <uri>model://tool_mount/meshes/tool_mount_with_camera_collision.stl</uri>
+            <uri>model://conveyor/meshes/conveyor_collision.stl</uri>
             <scale>1 1 1</scale>
           </mesh>
         </geometry>
@@ -16,7 +16,7 @@
       <visual name="visual">
 	    <geometry>
           <mesh>
-            <uri>model://tool_mount/meshes/tool_mount_with_camera_visual.dae</uri>
+            <uri>model://conveyor/meshes/conveyor_visual.dae</uri>
           </mesh>
         </geometry>
         <meta> 

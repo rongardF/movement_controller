@@ -193,6 +193,12 @@ Detailed rules for specific domains — loaded by planning and execution agents 
 - `.github/rules/testing.md` — pytest conventions, mocking strategy, test structure
 - `.github/rules/simulation.md` — Gazebo/RViz simulation stack, fake hardware, sim flags
 
+## Project Skills
+
+Reusable fix/task skills — load via `.github/skills/<name>/SKILL.md` when the matching scenario is detected:
+
+- `.github/skills/fix-collada-mesh/` — Fix Gazebo segfault caused by COLLADA `.dae` meshes with VERTEX/NORMAL inputs sharing `offset="0"` in a `<polylist>` (Assimp/THREE.js exports). Use when `[gazebo-N] Segmentation fault` appears on launch and a custom `.dae` visual mesh is involved.
+
 <!-- GSD Configuration — managed by get-shit-done installer -->
 # Instructions for GSD
 

@@ -177,6 +177,19 @@ def launch_setup(context, *args, **kwargs):
         output="screen",
     )
 
+    # Bridge the Basler camera (defined as a gz-sim camera sensor in the URDF)
+    # from Gazebo Transport into ROS 2. The image topic is set via <topic> in
+    # the sensor SDF; camera_info is auto-published on the sibling topic.
+    camera_bridge = Node(
+        package="ros_gz_bridge",
+        executable="parameter_bridge",
+        arguments=[
+            "/basler_camera/image@sensor_msgs/msg/Image[gz.msgs.Image",
+            "/basler_camera/camera_info@sensor_msgs/msg/CameraInfo[gz.msgs.CameraInfo",
+        ],
+        output="screen",
+    )
+
 
     movement_controller_launch = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(
@@ -202,6 +215,7 @@ def launch_setup(context, *args, **kwargs):
         gz_launch_description,
         gz_spawn_entity,
         gz_sim_bridge,
+        camera_bridge,
         movement_controller_launch,
     ]
 
@@ -290,7 +304,7 @@ def generate_launch_description():
     declared_arguments.append(
         DeclareLaunchArgument(
             "description_file",
-            default_value="ur_gz.urdf.xacro",
+            default_value="ur_default_setup.urdf.xacro",
             description="URDF/XACRO description file with the robot.",
         )
     )

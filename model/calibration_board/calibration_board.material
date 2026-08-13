@@ -1,0 +1,26 @@
+// Ogre material script — UR10 Calibration Board texture
+// Place this file alongside model.sdf in the model directory.
+// Gazebo picks it up automatically when the <uri> references it in the SDF.
+
+material CalibrationBoard/Chessboard
+{
+    technique
+    {
+        pass
+        {
+            lighting on
+            ambient  1.0 1.0 1.0 1.0
+            diffuse  1.0 1.0 1.0 1.0
+            specular 0.1 0.1 0.1 1.0 16
+
+            texture_unit
+            {
+                // Path relative to the Gazebo resource system
+                texture calibration_board_texture.png
+                filtering trilinear
+                // Clamp so the texture does not tile beyond the board edges
+                tex_address_mode clamp
+            }
+        }
+    }
+}

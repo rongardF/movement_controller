@@ -21,7 +21,12 @@
     "RCUTILS_LOGGING_USE_STDOUT": "0",
     "DISPLAY": "${localEnv:DISPLAY}",
     "QT_X11_NO_MITSHM": "1",
-    "LIBGL_ALWAYS_SOFTWARE": "1"
+    "LIBGL_ALWAYS_SOFTWARE": "1",
+    "MESA_GL_VERSION_OVERRIDE": "3.3",
+    "MESA_GLSL_VERSION_OVERRIDE": "330",
+    "QSG_RENDER_LOOP": "basic",
+    "GZ_SIM_GUI_CONFIG_PATH": "/workspaces/movement_controller/config/gz/gui.config",
+    "GZ_IP": "127.0.0.1"
   },
   "customizations": {
     "vscode": {

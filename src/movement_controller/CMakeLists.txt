@@ -141,9 +141,9 @@ install(
 )
 
 # --------------------------------------------------------------------------
-# Install launch, config and srdf files
+# Install launch, config, urdf, world and srdf files
 # --------------------------------------------------------------------------
-install(DIRECTORY config launch srdf
+install(DIRECTORY config launch srdf urdf world
   DESTINATION share/${PROJECT_NAME}
 )
 

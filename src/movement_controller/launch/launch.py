@@ -42,11 +42,11 @@ from launch.actions import (
     OpaqueFunction,
 )
 from launch.conditions import IfCondition
+from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import (
     LaunchConfiguration,
     PathJoinSubstitution,
     IfElseSubstitution,
-    PythonExpression,
 )
 from launch_ros.actions import Node
 from launch_ros.substitutions import FindPackageShare
@@ -61,49 +61,70 @@ ROBOT_TYPES = {
 def declare_arguments() -> list[DeclareLaunchArgument]:
     return [
         DeclareLaunchArgument(
-            "robot_name",
-            default_value="ur10_robot",
-            description="Name of the robot being used",
-        ),
-        DeclareLaunchArgument(
             "model",
-            description="Robot model being used.",
+            description=(
+                "Robot model being used (e.g. 'ur10e'). The vendor/family is "
+                "derived from this value."
+            ),
             choices=[
-                models for models_list in ROBOT_TYPES.values() for models in models_list
+                model for models in ROBOT_TYPES.values() for model in models
             ],
             default_value="ur10",
         ),
         DeclareLaunchArgument(
-            "robot_ip",
+            "ip_address",
             default_value="192.168.1.9",
-            description="IP address of the robot controller",
+            description="IP address of the robot controller (used for real hardware).",
         ),
         DeclareLaunchArgument(
-            "hardware_mode",
-            choices=["gz_simulation", "real_hardware", "mock_hardware"],
-            default_value="mock_hardware",
-            description="Is hardware simulated (gazebo or mock) or is real hardware used?",
-        ),
-        DeclareLaunchArgument("rviz", default_value="true", description="Launch RViz?"),
-        DeclareLaunchArgument(
-            "publish_robot_description_semantic",
+            "simulated",
             default_value="true",
-            description="MoveGroup publishes robot description semantic",
-        ),
-        DeclareLaunchArgument(
-            "srdf_file",
-            default_value=str(Path("srdf") / "ur.srdf.xacro"),
+            choices=["true", "false"],
             description=(
-                "Path to the SRDF (xacro) file used to build the robot "
-                "description semantic, relative to the package share directory"
+                "Run in Gazebo simulation (true) or on real hardware (false). "
+                "Selects which vendor launch file is included."
             ),
         ),
-        
         DeclareLaunchArgument(
             "debug",
             default_value="false",
-            description="Launch in debug mode with verbose logging",
-        )
+            description="Launch in debug mode with verbose logging.",
+        ),
+        DeclareLaunchArgument(
+            "rviz",
+            default_value="true",
+            description="Launch RViz?",
+        ),
+        DeclareLaunchArgument(
+            "world_file",
+            default_value=PathJoinSubstitution(
+                [FindPackageShare("movement_controller"), "world", "default.world"]
+            ),
+            description=(
+                "Gazebo world file, relative to the package share directory. "
+                "Only used when 'simulated' is true."
+            ),
+        ),
+        DeclareLaunchArgument(
+            "urdf_file",
+            default_value=PathJoinSubstitution(
+                [FindPackageShare("movement_controller"), "urdf", "ur", "gz_sim.urdf.xacro"]
+            ),
+            description=(
+                "Path to the URDF (xacro) file used to build the robot "
+                "description, relative to the package share directory."
+            ),
+        ),
+        DeclareLaunchArgument(
+            "srdf_file",
+            default_value=PathJoinSubstitution(
+                [FindPackageShare("movement_controller"), "srdf", "ur", "ur.srdf.xacro"]
+            ),
+            description=(
+                "Path to the SRDF (xacro) file used to build the robot "
+                "description semantic, relative to the package share directory."
+            ),
+        ),
     ]
 
 
@@ -145,6 +166,55 @@ def build_moveit_config(family: str, model_value: str, srdf_file: str):
     #     )
 
     raise ValueError(f"No MoveIt configuration defined for robot family '{family}'.")
+
+
+def _build_ur_launch_arguments(
+    *, model_value: str, ip_address, world_file, urdf_file, is_simulated: bool
+) -> dict:
+    """Map the generic dispatcher arguments to the UR vendor launch arguments."""
+    arguments = {
+        "ur_type": model_value,
+        "robot_ip": ip_address,
+        "urdf_file": urdf_file,
+    }
+    # 'world_file' is only consumed by the Gazebo simulation launch file.
+    if is_simulated:
+        arguments["world_file"] = world_file
+    return arguments
+
+
+# Per-family builders that translate the generic dispatcher arguments into the
+# vendor-specific launch arguments expected by that vendor's gz_sim.launch.py /
+# hardware.launch.py files. Each vendor may use its own argument names and decide
+# which arguments are relevant for simulation vs. real hardware.
+#
+# Add a new entry here when onboarding a new robot vendor, e.g.:
+#   "fanuc": _build_fanuc_launch_arguments,
+VENDOR_LAUNCH_ARGUMENT_BUILDERS = {
+    "ur": _build_ur_launch_arguments,
+}
+
+
+def build_vendor_launch_arguments(
+    family: str, *, model_value: str, ip_address, world_file, urdf_file, is_simulated: bool
+) -> dict:
+    """Return the vendor-specific launch arguments for the given robot family.
+
+    Raises ValueError if the family has no registered argument builder.
+    """
+    builder = VENDOR_LAUNCH_ARGUMENT_BUILDERS.get(family)
+    if builder is None:
+        raise ValueError(
+            f"No vendor launch-argument mapping defined for robot family '{family}'."
+        )
+    return builder(
+        model_value=model_value,
+        ip_address=ip_address,
+        world_file=world_file,
+        urdf_file=urdf_file,
+        is_simulated=is_simulated,
+    )
+
 
 def load_speed_and_acceleration_constraints(family: str) -> dict:
     """Load the speed and acceleration limits for both joints and 
@@ -272,18 +342,50 @@ def setup_robot_nodes(context, *args, **kwargs):
     matching robot family and its MoveIt configuration.
     """
     model_value = LaunchConfiguration("model").perform(context)
-    hardware_mode_value = LaunchConfiguration("hardware_mode").perform(context)
+    simulated_value = LaunchConfiguration("simulated").perform(context)
     srdf_file_value = LaunchConfiguration("srdf_file").perform(context)
     rviz = LaunchConfiguration("rviz")
-    publish_robot_description_semantic = LaunchConfiguration(
-        "publish_robot_description_semantic"
-    )
     debug = LaunchConfiguration("debug")
+    ip_address = LaunchConfiguration("ip_address")
+    world_file = LaunchConfiguration("world_file")
+    urdf_file = LaunchConfiguration("urdf_file")
 
-    # gz_simulation uses Gazebo's clock; real/mock use wall time
-    sim_time_used = hardware_mode_value == "gz_simulation"
+    # 'simulated' is a boolean-like string ("true"/"false").
+    is_simulated = simulated_value.lower() in ("true", "1", "yes", "on")
+    # Gazebo owns the clock in simulation; real hardware uses wall time.
+    sim_time_used = is_simulated
 
     family = get_robot_family(model_value)
+
+    # region: vendor driver include
+    # Each vendor family has its own launch sub-directory named "<family>_launch"
+    # that always contains a 'gz_sim.launch.py' and a 'hardware.launch.py'.
+    # Pick one based on the 'simulated' argument.
+    vendor_launch_dir = (
+        Path(get_package_share_directory("movement_controller"))
+        / "launch"
+        / f"{family}_launch"
+    )
+    driver_launch_file = "gz_sim.launch.py" if is_simulated else "hardware.launch.py"
+    driver_launch_path = vendor_launch_dir / driver_launch_file
+    if not driver_launch_path.is_file():
+        raise FileNotFoundError(
+            f"Vendor launch file not found for family '{family}': {driver_launch_path}"
+        )
+    driver_launch_arguments = build_vendor_launch_arguments(
+        family,
+        model_value=model_value,
+        ip_address=ip_address,
+        world_file=world_file,
+        urdf_file=urdf_file,
+        is_simulated=is_simulated,
+    )
+    robot_driver_launch = IncludeLaunchDescription(
+        PythonLaunchDescriptionSource(str(driver_launch_path)),
+        launch_arguments=driver_launch_arguments.items(),
+    )
+    # endregion: vendor driver include
+
     moveit_config = build_moveit_config(family, model_value, srdf_file_value)
     speed_and_acceleration_constraints = load_speed_and_acceleration_constraints(family)
     joint_constraints = load_joint_constraints(family)
@@ -296,7 +398,7 @@ def setup_robot_nodes(context, *args, **kwargs):
             moveit_config.to_dict(),
             {
                 "use_sim_time": sim_time_used,
-                "publish_robot_description_semantic": publish_robot_description_semantic,
+                "publish_robot_description_semantic": True,
             },
         ],
     )
@@ -345,52 +447,32 @@ def setup_robot_nodes(context, *args, **kwargs):
 
     nodes = [move_group_node, rviz_node, movement_controller]
 
-    # gz_simulation: Gazebo owns the controller_manager and robot_state_publisher,
-    # so start MoveIt nodes directly — there is no ur.launch.py to emit robot_launched.
-    # real/mock hardware: ur.launch.py emits robot_launched once the driver is ready.
-    if sim_time_used:
-        return nodes
-    
+    # Simulation: Gazebo owns the controller_manager and robot_state_publisher,
+    # so start the MoveIt nodes directly alongside the sim driver launch.
+    # Real hardware: hardware.launch.py emits 'robot_launched' once the driver
+    # is ready, and the MoveIt nodes start only then.
+    if is_simulated:
+        return [robot_driver_launch] + nodes
+
     return [
+        robot_driver_launch,
         RegisterEventHandler(
             EventHandler(
                 matcher=lambda event: event.name == "robot_launched",
                 entities=nodes,
             )
-        )
+        ),
     ]
 
 
 def generate_launch_description():
-    # declare launch configurations
-    model = LaunchConfiguration("model")
-    robot_ip = LaunchConfiguration("robot_ip")
-    hardware_mode = LaunchConfiguration("hardware_mode")
-
-    # create launch description with declared launch arguments
+    # Create the launch description with the declared launch arguments.
     ld = LaunchDescription(declare_arguments())
 
-    # include the correct robot driver launch file based on the selected robot model
-    ur_control_launch = IncludeLaunchDescription(
-        PathJoinSubstitution(
-            [FindPackageShare("movement_controller"), "launch", "ur.launch.py"]
-        ),
-        launch_arguments={
-            "ur_type": model,
-            "robot_ip": robot_ip,
-            "hardware_mode": hardware_mode,
-        }.items(),
-        condition=IfCondition(
-            PythonExpression([
-                "'", model, "' in ", str(ROBOT_TYPES["ur"]),
-                " and '", hardware_mode, "' != 'gz_simulation'",
-            ])
-        ),
-    )
-    ld.add_action(ur_control_launch)
-
-    # MoveIt config and the nodes that consume it are family-specific and are
-    # built at runtime once the 'model' value can be resolved.
+    # The robot 'model' is only known at runtime, so vendor resolution, the
+    # driver include selection (simulated vs. real hardware) and the MoveIt
+    # nodes that consume the model-specific config are all built inside an
+    # OpaqueFunction once the argument values can be resolved.
     ld.add_action(OpaqueFunction(function=setup_robot_nodes))
 
     return ld

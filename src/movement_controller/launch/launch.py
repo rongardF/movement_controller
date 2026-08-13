@@ -175,7 +175,7 @@ def _build_ur_launch_arguments(
     arguments = {
         "ur_type": model_value,
         "robot_ip": ip_address,
-        "urdf_file": urdf_file,
+        "description_file": urdf_file,
     }
     # 'world_file' is only consumed by the Gazebo simulation launch file.
     if is_simulated:

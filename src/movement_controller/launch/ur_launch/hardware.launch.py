@@ -29,13 +29,16 @@
 #
 # Author: Denis Stogl
 
-from launch import LaunchDescription
+from launch import LaunchDescription, Event
 from launch.actions import (
     DeclareLaunchArgument,
     IncludeLaunchDescription,
     OpaqueFunction,
     ExecuteProcess,
+    EmitEvent,
+    RegisterEventHandler,
 )
+from launch.event_handlers import OnProcessExit
 from launch.conditions import IfCondition, UnlessCondition
 from launch.launch_description_sources import AnyLaunchDescriptionSource
 from launch.substitutions import (
@@ -48,6 +51,9 @@ from launch.substitutions import (
 from launch_ros.actions import Node
 from launch_ros.parameter_descriptions import ParameterFile, ParameterValue
 from launch_ros.substitutions import FindPackagePrefix, FindPackageShare
+
+class RobotLaunchedEvent(Event):
+    name = "robot_launched"
 
 
 def launch_setup(context):
@@ -178,7 +184,6 @@ def launch_setup(context):
                     "speed_scaling_state_broadcaster",
                     "tcp_pose_broadcaster",
                     "ur_configuration_controller",
-                    "gravity_update_controller",
                 ]
             },
         ],
@@ -224,8 +229,6 @@ def launch_setup(context):
         "force_torque_sensor_broadcaster",
         "tcp_pose_broadcaster",
         "ur_configuration_controller",
-        "gravity_update_controller",
-        "friction_model_controller",
     ]
     controllers_inactive = [
         "joint_trajectory_controller",
@@ -236,8 +239,6 @@ def launch_setup(context):
         "passthrough_trajectory_controller",
         "freedrive_mode_controller",
         "tool_contact_controller",
-        "motion_primitive_forward_controller",
-        "twist_controller",
     ]
     if activate_joint_controller.perform(context) == "true":
         controllers_active.append(initial_joint_controller.perform(context))
@@ -382,6 +383,19 @@ def launch_setup(context):
     )
     # endregion: robot description
 
+    wait_robot_description = Node(
+        package="ur_robot_driver",
+        executable="wait_for_robot_description",
+        output="screen",
+    )
+
+    event = RegisterEventHandler(
+        OnProcessExit(
+            target_action=wait_robot_description,
+            on_exit=[EmitEvent(event=RobotLaunchedEvent())],
+        )
+    )
+
     nodes_to_start = [
         control_node,
         dashboard_client_node,
@@ -391,6 +405,8 @@ def launch_setup(context):
         urscript_interface,
         rsp,
         trajectory_until_node,
+        wait_robot_description,
+        event
     ] + controller_spawners
 
     return nodes_to_start

@@ -1,9 +1,0 @@
-<?xml version="1.0"?>
-<robot xmlns:xacro="http://wiki.ros.org/xacro" name="$(arg name)">
-  <!-- robot name parameter -->
-  <xacro:arg name="name" default="ur"/>
-
-  <!-- create link fixed to the "world" -->
-  <link name="world" />
-
-</robot>

@@ -64,12 +64,16 @@ def launch_setup(context, *args, **kwargs):
     gazebo_gui = LaunchConfiguration("gazebo_gui")
     world_file = LaunchConfiguration("world_file")
 
+    # set GZ_SIM_RESOURCE_PATH to the models directory of the package
+    gazebo_sim_resource_path = LaunchConfiguration("gazebo_sim_resource_path").perform(context)
+    environ["GZ_SIM_RESOURCE_PATH"] = str(gazebo_sim_resource_path)
+
     initial_joint_controllers = PathJoinSubstitution(
-        [FindPackageShare("ur_gazebo_simulation"), "config", controllers_file]
+        [FindPackageShare("movement_controller"), "config", "ur", controllers_file]
     )
 
     initial_positions_file_abs = PathJoinSubstitution(
-        ["ur_gazebo_simulation", "config", initial_positions_file]
+        [FindPackageShare("movement_controller"), "config", "ur", initial_positions_file]
     )
 
     robot_description_content = Command(
@@ -187,12 +191,14 @@ def launch_setup(context, *args, **kwargs):
 
 
 def generate_launch_description():
-    pkg_share_dir = get_package_share_directory("ur_gazebo_simulation")
-    models_dir = pkg_share_dir + "/model"
-    worlds_dir = pkg_share_dir + "/world/default.world"
-    environ["GZ_SIM_RESOURCE_PATH"] = models_dir
-
     declared_arguments = []
+    declared_arguments.append(
+        DeclareLaunchArgument(
+            "gazebo_sim_resource_path",
+            description="Path to Gazebo simulation resources.",
+            default_value="/workspaces/movement_controller/model",
+        )
+    )
     # UR specific arguments
     declared_arguments.append(
         DeclareLaunchArgument(
@@ -239,20 +245,14 @@ def generate_launch_description():
     declared_arguments.append(
         DeclareLaunchArgument(
             "controllers_file",
-            default_value="ur_controllers.yaml",
+            default_value="controllers.yaml",
             description="YAML file with the controllers configuration.",
         )
     )
     declared_arguments.append(
         DeclareLaunchArgument(
             "initial_positions_file",
-            default_value=PathJoinSubstitution(
-                [
-                    FindPackageShare("ur_gazebo_simulation"),
-                    "config",
-                    "initial_positions.yaml",
-                ]
-            ),
+            default_value="initial_positions.yaml",
             description="YAML file (absolute path) with the robot's initial joint positions.",
         )
     )
@@ -299,7 +299,7 @@ def generate_launch_description():
     declared_arguments.append(
         DeclareLaunchArgument(
             "world_file",
-            default_value=worlds_dir,
+            default_value="/workspaces/movement_controller/world/default.world",
             description="Gazebo world file (absolute path or filename from the gazebosim worlds collection) containing a custom world.",
         )
     )

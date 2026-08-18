@@ -83,13 +83,13 @@
     <visual>
       <origin xyz="0 0 0" rpy="0 0 0"/>
       <geometry>
-        <mesh filename="file:///workspaces/movement_controller/model/station/meshes/station_visual.dae"/>
+        <mesh filename="file://$(find station)/config/model/station/meshes/station_visual.dae"/>
       </geometry>
     </visual>
     <collision>
       <origin xyz="0 0 0" rpy="0 0 0"/>
       <geometry>
-        <mesh filename="file:///workspaces/movement_controller/model/station/meshes/station_collision.stl"/>
+        <mesh filename="file://$(find station)/config/model/station/meshes/station_collision.stl"/>
       </geometry>
     </collision>
     <inertial>
@@ -127,13 +127,13 @@
     <visual>
       <origin xyz="0 0 0" rpy="0 0 0"/>
       <geometry>
-        <mesh filename="file:///workspaces/movement_controller/model/tool_mount/meshes/tool_mount_with_camera_visual.dae"/>
+        <mesh filename="file://$(find station)/config/model/tool_mount/meshes/tool_mount_with_camera_visual.dae"/>
       </geometry>
     </visual>
     <collision>
       <origin xyz="0 0 0" rpy="0 0 0"/>
       <geometry>
-        <mesh filename="file:///workspaces/movement_controller/model/tool_mount/meshes/tool_mount_with_camera_collision.stl"/>
+        <mesh filename="file://$(find station)/config/model/tool_mount/meshes/tool_mount_with_camera_collision.stl"/>
       </geometry>
     </collision>
     <inertial>
@@ -201,13 +201,13 @@
     <visual>
       <origin xyz="0 0 0" rpy="0 0 0"/>
       <geometry>
-        <mesh filename="file:///workspaces/movement_controller/model/conveyor/meshes/conveyor_visual.dae"/>
+        <mesh filename="file://$(find station)/config/model/conveyor/meshes/conveyor_visual.dae"/>
       </geometry>
     </visual>
     <collision>
       <origin xyz="0 0 0" rpy="0 0 0"/>
       <geometry>
-        <mesh filename="file:///workspaces/movement_controller/model/conveyor/meshes/conveyor_collision.stl"/>
+        <mesh filename="file://$(find station)/config/model/conveyor/meshes/conveyor_collision.stl"/>
       </geometry>
     </collision>
     <inertial>

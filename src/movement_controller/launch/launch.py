@@ -125,6 +125,13 @@ def declare_arguments() -> list[DeclareLaunchArgument]:
                 "description semantic, relative to the package share directory."
             ),
         ),
+        DeclareLaunchArgument(
+            "gz_resource_path",
+            default_value="",
+            description=(
+                "Path to the Gazebo resource files."
+            ),
+        )
     ]
 
 
@@ -169,7 +176,7 @@ def build_moveit_config(family: str, model_value: str, srdf_file: str):
 
 
 def _build_ur_launch_arguments(
-    *, model_value: str, ip_address, world_file, urdf_file, is_simulated: bool
+    *, model_value: str, ip_address, world_file, urdf_file, is_simulated: bool, gz_resource_path
 ) -> dict:
     """Map the generic dispatcher arguments to the UR vendor launch arguments."""
     arguments = {
@@ -180,6 +187,7 @@ def _build_ur_launch_arguments(
     # 'world_file' is only consumed by the Gazebo simulation launch file.
     if is_simulated:
         arguments["world_file"] = world_file
+        arguments["gazebo_sim_resource_path"] = gz_resource_path
     return arguments
 
 
@@ -196,7 +204,7 @@ VENDOR_LAUNCH_ARGUMENT_BUILDERS = {
 
 
 def build_vendor_launch_arguments(
-    family: str, *, model_value: str, ip_address, world_file, urdf_file, is_simulated: bool
+    family: str, *, model_value: str, ip_address, world_file, urdf_file, is_simulated: bool, gz_resource_path
 ) -> dict:
     """Return the vendor-specific launch arguments for the given robot family.
 
@@ -213,6 +221,7 @@ def build_vendor_launch_arguments(
         world_file=world_file,
         urdf_file=urdf_file,
         is_simulated=is_simulated,
+        gz_resource_path=gz_resource_path,
     )
 
 
@@ -349,6 +358,7 @@ def setup_robot_nodes(context, *args, **kwargs):
     ip_address = LaunchConfiguration("ip_address")
     world_file = LaunchConfiguration("world_file")
     urdf_file = LaunchConfiguration("urdf_file")
+    gz_resource_path = LaunchConfiguration("gz_resource_path")
 
     # 'simulated' is a boolean-like string ("true"/"false").
     is_simulated = simulated_value.lower() in ("true", "1", "yes", "on")
@@ -379,6 +389,7 @@ def setup_robot_nodes(context, *args, **kwargs):
         world_file=world_file,
         urdf_file=urdf_file,
         is_simulated=is_simulated,
+        gz_resource_path=gz_resource_path,
     )
     robot_driver_launch = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(str(driver_launch_path)),

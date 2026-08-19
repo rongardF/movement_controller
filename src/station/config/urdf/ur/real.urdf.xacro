@@ -8,6 +8,8 @@
   <xacro:include filename="$(find ur_robot_driver)/urdf/ur.ros2_control.xacro" />
   <xacro:include filename="$(find ur_description)/urdf/inc/ur_transmissions.xacro" />
 
+  <xacro:include filename="$(find cameras)/urdf/basler.urdf.xacro"/>
+
   <!-- possible 'ur_type' values: ur3, ur5, ur10, ur3e, ur5e, ur7e, ur10e, ur12e, ur16e, ur8long, ur15, ur18, ur20, ur30 -->
   <!-- the default value should raise an error in case this was called without defining the type -->
   <xacro:arg name="ur_type" default="ur5x"/>
@@ -137,13 +139,13 @@
     <visual>
       <origin xyz="0 0 0" rpy="0 0 0"/>
       <geometry>
-        <mesh filename="file://$(find station)/config/model/tool_mount/meshes/tool_mount_with_camera_visual.dae"/>
+        <mesh filename="file://$(find station)/config/model/tool_mount/meshes/tool_mount_visual.dae"/>
       </geometry>
     </visual>
     <collision>
       <origin xyz="0 0 0" rpy="0 0 0"/>
       <geometry>
-        <mesh filename="file://$(find station)/config/model/tool_mount/meshes/tool_mount_with_camera_collision.stl"/>
+        <mesh filename="file://$(find station)/config/model/tool_mount/meshes/tool_mount_collision.stl"/>
       </geometry>
     </collision>
     <inertial>
@@ -155,8 +157,12 @@
   <joint name="tool_mount_joint" type="fixed">
     <parent link="$(arg tf_prefix)tool0"/>
     <child link="tool_mount_link"/>
-    <origin xyz="0 0 0" rpy="0 0 0"/>
+    <origin xyz="0 0 0" rpy="-1.57 -1.57 0"/>
   </joint>
+
+  <xacro:basler_camera parent="tool_mount_link" name="basler" simulated="false" tf_prefix="$(arg tf_prefix)">
+    <origin xyz="-0.03 0.025 -0.057" rpy="1.57 0 1.57"/>
+  </xacro:basler_camera>
 
   <link name="conveyor">
     <visual>

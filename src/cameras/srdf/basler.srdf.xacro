@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<robot xmlns:xacro="http://wiki.ros.org/xacro" name="basler_camera_srdf">
+
+  <xacro:macro name="basler_camera_srdf" params="parent name:=basler tf_prefix:=''">
+    <disable_collisions link1="${name}_camera_link" link2="${tf_prefix}${parent}" reason="Adjacent" />
+  </xacro:macro>
+
+</robot>

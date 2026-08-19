@@ -8,6 +8,9 @@
   <!-- robot name parameter -->
   <xacro:arg name="name" default="ur"/>
 
+  <!-- Camera SRDF macro (disables camera<->parent collisions) -->
+  <xacro:include filename="$(find cameras)/srdf/basler.srdf.xacro"/>
+
   <xacro:macro name="ur_srdf" params="">
     <!--GROUPS - Representation of a set of joints and links. This can be useful for specifying DOF to plan for, defining arms, end effectors, etc-->
     <!--LINKS - When a link is specified, the parent joint of that link (if it exists) is automatically included-->
@@ -48,6 +51,9 @@
     <disable_collisions link1="tool_mount_link" link2="wrist_1_link" reason="Never" />
     <disable_collisions link1="tool_mount_link" link2="wrist_2_link" reason="Never" />
     <disable_collisions link1="tool_mount_link" link2="wrist_3_link" reason="Never" />
+
+    <!-- Disable collisions between the camera and the link it is mounted on -->
+    <xacro:basler_camera_srdf parent="tool_mount_link" name="basler" />
 
   </xacro:macro>
 

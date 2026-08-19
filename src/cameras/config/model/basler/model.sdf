@@ -8,7 +8,7 @@
       <collision name="collision">
         <geometry>
           <mesh>
-            <uri>model://tool_mount/meshes/tool_mount_collision.stl</uri>
+            <uri>model://basler/meshes/camera_collision.stl</uri>
             <scale>1 1 1</scale>
           </mesh>
         </geometry>
@@ -16,7 +16,7 @@
       <visual name="visual">
 	    <geometry>
           <mesh>
-            <uri>model://tool_mount/meshes/tool_mount_visual.dae</uri>
+            <uri>model://basler/meshes/camera_visual.dae</uri>
           </mesh>
         </geometry>
         <meta> 

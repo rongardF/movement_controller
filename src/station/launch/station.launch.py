@@ -48,6 +48,7 @@ from launch_ros.substitutions import FindPackageShare
 def generate_launch_description() -> LaunchDescription:
     station_share = FindPackageShare("station")
     movement_controller_share = FindPackageShare("movement_controller")
+    cameras_share = FindPackageShare("cameras")
 
     model = LaunchConfiguration("model")
     simulated = LaunchConfiguration("simulated")
@@ -121,4 +122,15 @@ def generate_launch_description() -> LaunchDescription:
         }.items(),
     )
 
-    return LaunchDescription(declared_arguments + [movement_controller_launch])
+    camera_launch = IncludeLaunchDescription(
+        PythonLaunchDescriptionSource(
+            PathJoinSubstitution(
+                [cameras_share, "launch", "cameras.launch.py"]
+            )
+        ),
+        launch_arguments={
+            "simulated": simulated
+        }.items(),
+    )
+
+    return LaunchDescription(declared_arguments + [camera_launch, movement_controller_launch])

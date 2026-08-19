@@ -1,0 +1,156 @@
+<?xml version="1.0"?>
+<robot xmlns:xacro="http://wiki.ros.org/xacro" name="basler_camera">
+
+  <xacro:property name="cameras_model_base" value="$(find cameras)/config/model"/>
+
+  <!--
+    Reusable camera macro.
+
+    Usage (from a robot URDF):
+      <xacro:include filename="$(find cameras)/urdf/basler.urdf.xacro"/>
+      <xacro:basler_camera parent="tool_mount_link" name="basler">
+        <origin xyz="0 0 0" rpy="0 0 0"/>
+      </xacro:basler_camera>
+
+    Parameters:
+      parent           - link the camera is rigidly attached to (required)
+      name             - name prefix for the camera link/joint/sensor
+      tf_prefix        - optional TF prefix applied to the parent link
+      camera_model     - camera model key (see known_camera_models registry)
+      simulated        - 'true' to emit the Gazebo camera sensor
+      update_rate      - Gazebo sensor update rate (Hz)
+      *origin          - mount pose of the camera link relative to the parent
+  -->
+  <xacro:macro name="basler_camera" params="
+    parent
+    name:=basler
+    tf_prefix:=''
+    camera_model:=basler
+    simulated:=true
+    update_rate:=30.0
+    *origin">
+
+    <xacro:property name="known_camera_models" value="${['basler']}"/>
+    <xacro:property name="is_known_model" value="${camera_model in known_camera_models}"/>
+
+    <link name="${name}_camera_link">
+      <visual>
+        <origin xyz="0 0 0" rpy="0 0 0"/>
+        <geometry>
+          <xacro:if value="${camera_model == 'basler'}">
+              <mesh filename="file://${cameras_model_base}/basler/meshes/camera_visual.dae"/>
+          </xacro:if>
+          <!-- Fallback visual so the URDF is valid for unknown camera models -->
+          <xacro:unless value="${is_known_model}">
+              <box size="0.05 0.05 0.05"/>
+          </xacro:unless>
+        </geometry>
+      </visual>
+      <collision>
+        <origin xyz="0 0 0" rpy="0 0 0"/>
+        <geometry>
+          <xacro:if value="${camera_model == 'basler'}">
+              <mesh filename="file://${cameras_model_base}/basler/meshes/camera_collision.stl"/>
+          </xacro:if>
+          <!-- Fallback collision so the URDF is valid for unknown camera models -->
+          <xacro:unless value="${is_known_model}">
+              <box size="0.05 0.05 0.05"/>
+          </xacro:unless>
+        </geometry>
+      </collision>
+      <xacro:if value="${camera_model == 'basler'}">
+          <inertial>
+          <origin xyz="0 0 0" rpy="0 0 0"/>
+          <mass value="0.1"/>
+          <inertia
+              ixx="${(1.0/12.0) * 0.1 * (0.029*0.029 + 0.042*0.042)}"
+              ixy="0.0"
+              ixz="0.0"
+              iyy="${(1.0/12.0) * 0.1 * (0.029*0.029 + 0.042*0.042)}"
+              iyz="0.0"
+              izz="${(1.0/12.0) * 0.1 * (0.029*0.029 + 0.029*0.029)}"/>
+          </inertial>
+      </xacro:if>
+      <!-- Fallback inertia so the link is physically valid for unknown models -->
+      <xacro:unless value="${is_known_model}">
+          <inertial>
+          <origin xyz="0 0 0" rpy="0 0 0"/>
+          <mass value="0.1"/>
+          <inertia ixx="0.0001" ixy="0.0" ixz="0.0" iyy="0.0001" iyz="0.0" izz="0.0001"/>
+          </inertial>
+      </xacro:unless>
+    </link>
+
+    <joint name="${name}_camera_joint" type="fixed">
+      <parent link="${tf_prefix}${parent}"/>
+      <child link="${name}_camera_link"/>
+      <xacro:insert_block name="origin"/>
+    </joint>
+
+    <!-- Gazebo plugin for camera sensor: https://sdformat.org/spec/1.12/sensor/#sensor_camera -->
+    <xacro:if value="${simulated}">
+          <gazebo reference="${name}_camera_link">
+              <sensor name="${name}_camera_sensor" type="camera">
+                  <xacro:if value="${camera_model == 'basler'}">
+                      <pose>0.0700233 -0.127701 -0.0225334 0 0 -1.57</pose>
+                  </xacro:if>
+                  <!-- Fallback sensor pose for unknown camera models -->
+                  <xacro:unless value="${is_known_model}">
+                      <pose>0 0 0 0 0 0</pose>
+                  </xacro:unless>
+              <always_on>true</always_on>
+              <update_rate>${update_rate}</update_rate>
+              <visualize>true</visualize>
+              <topic>simulated_camera/image_raw</topic>
+              <gz_frame_id>${tf_prefix}${parent}</gz_frame_id>
+              <camera name="${name}_camera">
+                  <camera_info_topic>simulated_camera/camera_info</camera_info_topic>
+                  <xacro:if value="${camera_model == 'basler'}">
+                      <horizontal_fov>1.0472</horizontal_fov> <!-- ~60 degrees -->
+                      <image>
+                      <width>1920</width>
+                      <height>1080</height>
+                      <format>R8G8B8</format>
+                      </image>
+                  </xacro:if>
+                  <!-- Fallback optics for unknown camera models -->
+                  <xacro:unless value="${is_known_model}">
+                      <horizontal_fov>1.0472</horizontal_fov> <!-- ~60 degrees -->
+                      <image>
+                      <width>640</width>
+                      <height>480</height>
+                      <format>R8G8B8</format>
+                      </image>
+                  </xacro:unless>
+                  <clip>
+                  <near>0.01</near>
+                  <far>50.0</far>
+                  </clip>
+                  <noise>
+                  <type>gaussian</type>
+                  <mean>0.0</mean>
+                  <stddev>0.007</stddev>
+                  </noise>
+                  <!-- Lens distortion (Brown-Conrady / plumb-bob model, same as OpenCV).
+                      k1/k2/k3: radial coefficients  (negative k1 = barrel distortion).
+                      p1/p2:    tangential coefficients.
+                      center:   normalised distortion centre (0.5 0.5 = optical centre).
+                      Tune these to match the real Basler lens calibration output. -->
+                  <xacro:if value="${camera_model == 'basler'}">
+                      <distortion>
+                          <k1>-0.2477771909786335</k1>
+                          <k2>0.126037678472415</k2>
+                          <k3>-0.0010056044464992401</k3>
+                          <p1>0.000391226451080845</p1>
+                          <p2>-0.04092116227683235</p2>
+                          <center>0.5 0.5</center>
+                      </distortion>
+                  </xacro:if>
+                  <optical_frame_id>${tf_prefix}${parent}</optical_frame_id>
+              </camera>
+              </sensor>
+          </gazebo>
+      </xacro:if>
+  </xacro:macro>
+
+</robot>

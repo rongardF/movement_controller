@@ -9,6 +9,8 @@
   <xacro:include filename="$(find ur_description)/urdf/inc/ur_joint_control.xacro" />
 
   <xacro:include filename="$(find cameras)/urdf/basler.urdf.xacro"/>
+  <xacro:include filename="$(find laser_sensors)/urdf/cross_laser.urdf.xacro"/>
+  <xacro:include filename="$(find endtools)/urdf/dispensing_tool.urdf.xacro"/>
 
   <!-- ros2_control macro (merged from ur_gz.ros2_control.xacro) -->
   <xacro:macro name="ur_ros2_control" params="
@@ -107,6 +109,10 @@
     <child link="station"/>
   </joint>
 
+  <xacro:cross_laser parent="station" name="captron" simulated="true" tf_prefix="$(arg tf_prefix)">
+    <origin xyz="0.35 0.45 0.95" rpy="0 0 3.14"/>
+  </xacro:cross_laser>
+
   <!-- arm mounted on top of the station (z=1.0) -->
   <xacro:ur_robot
     name="$(arg name)"
@@ -153,6 +159,10 @@
   <xacro:basler_camera parent="tool_mount_link" name="basler" simulated="true" tf_prefix="$(arg tf_prefix)">
     <origin xyz="-0.03 0.025 -0.057" rpy="1.57 0 1.57"/>
   </xacro:basler_camera>
+
+  <xacro:dispensing parent="tool_mount_link" name="dispensing" simulated="true" tf_prefix="$(arg tf_prefix)">
+    <origin xyz="0.0475 0 0" rpy="0 0 0"/>
+  </xacro:dispensing>
 
   <!-- conveyor belt fixed to world frame -->
   <link name="conveyor">

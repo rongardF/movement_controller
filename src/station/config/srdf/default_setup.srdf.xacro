@@ -10,6 +10,8 @@
 
   <!-- Camera SRDF macro (disables camera<->parent collisions) -->
   <xacro:include filename="$(find cameras)/srdf/basler.srdf.xacro"/>
+  <xacro:include filename="$(find laser_sensors)/srdf/cross_laser.srdf.xacro"/>
+  <xacro:include filename="$(find endtools)/srdf/dispensing_tool.srdf.xacro"/>
 
   <xacro:macro name="ur_srdf" params="">
     <!--GROUPS - Representation of a set of joints and links. This can be useful for specifying DOF to plan for, defining arms, end effectors, etc-->
@@ -54,6 +56,17 @@
 
     <!-- Disable collisions between the camera and the link it is mounted on -->
     <xacro:basler_camera_srdf parent="tool_mount_link" name="basler" />
+    <xacro:basler_camera_srdf parent="flange" name="basler" />
+    <xacro:basler_camera_srdf parent="wrist_3_link" name="basler" />
+
+    <!-- Disable collisions between the laser sensor and the link it is mounted on -->
+    <xacro:cross_laser_srdf parent="station" name="captron"/>
+
+    <!-- Disable collisions between the dispensing tool and the link it is mounted on -->
+    <xacro:dispensing_tool_srdf parent="tool_mount_link" name="dispensing"/>
+    <xacro:dispensing_tool_srdf parent="flange" name="dispensing" />
+    <xacro:dispensing_tool_srdf parent="wrist_3_link" name="dispensing" />
+    <xacro:dispensing_tool_srdf parent="basler_camera_link" name="dispensing" />
 
   </xacro:macro>
 

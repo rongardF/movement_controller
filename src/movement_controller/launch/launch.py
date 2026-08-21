@@ -421,7 +421,6 @@ def setup_robot_nodes(context, *args, **kwargs):
         package="rviz2",
         executable="rviz2",
         condition=IfCondition(rviz),
-        name="rviz2_moveit",
         output="log",
         arguments=["-d", rviz_config_file],
         parameters=[

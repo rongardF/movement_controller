@@ -35,7 +35,11 @@ keeping the movement controller decoupled from any particular robot cell.
 """
 
 from launch import LaunchDescription
-from launch.actions import DeclareLaunchArgument, IncludeLaunchDescription
+from launch.actions import (
+    DeclareLaunchArgument,
+    GroupAction,
+    IncludeLaunchDescription,
+)
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import (
     IfElseSubstitution,
@@ -49,6 +53,7 @@ def generate_launch_description() -> LaunchDescription:
     station_share = FindPackageShare("station")
     movement_controller_share = FindPackageShare("movement_controller")
     cameras_share = FindPackageShare("cameras")
+    laser_sensors_share = FindPackageShare("laser_sensors")
 
     model = LaunchConfiguration("model")
     simulated = LaunchConfiguration("simulated")
@@ -133,4 +138,24 @@ def generate_launch_description() -> LaunchDescription:
         }.items(),
     )
 
-    return LaunchDescription(declared_arguments + [camera_launch, movement_controller_launch])
+    laser_cross_launch = IncludeLaunchDescription(
+        PythonLaunchDescriptionSource(
+            PathJoinSubstitution(
+                [laser_sensors_share, "launch", "captron_orl2.launch.py"]
+            )
+        ),
+        launch_arguments={
+            "simulated": simulated
+        }.items(),
+    )
+
+    # use GroupAction to scope the launch files so that their declared arguments don't leak into 
+    # the global namespace
+    return LaunchDescription(
+        declared_arguments
+        + [
+            GroupAction([camera_launch], scoped=True),
+            GroupAction([laser_cross_launch], scoped=True),
+            GroupAction([movement_controller_launch], scoped=True),
+        ]
+    )

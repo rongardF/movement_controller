@@ -224,6 +224,26 @@ Node(
 
 ---
 
+## Package Build System — Python + Interfaces in One Package
+
+Per project convention, ROS 2 interfaces (`.msg`/`.srv`/`.action`) live in the **same**
+`ament_cmake` package that implements the node using them (no separate `*_interfaces`
+package). This means most packages here mix a Python module with generated interfaces.
+
+**Pitfall:** calling both `ament_python_install_package(${PROJECT_NAME})` and
+`rosidl_generate_interfaces(${PROJECT_NAME} ...)` in the same `CMakeLists.txt` fails at
+configure time with `ament_cmake_python_symlink_<pkg>` (and `..._egg`) "target already
+exists" — because `rosidl_generate_interfaces` internally calls
+`ament_python_install_package` too.
+
+**Fix:** pass `SKIP_INSTALL` to `rosidl_generate_interfaces`, then install the generated
+Python bindings and C/C++ typesupport libraries manually. Full copy-paste recipe (CMake +
+`package.xml` + verify steps + optional `ros2 interface show` support) is in
+**`.github/skills/ros2-python-interface-package/SKILL.md`**. Reference implementations:
+`src/movement_controller/CMakeLists.txt`, `src/laser_sensors/CMakeLists.txt`.
+
+---
+
 ## MoveIt2 Python API — moveit_py
 
 Use `moveit_py` (the `moveit` Python package) for all motion planning. This is the **only** supported

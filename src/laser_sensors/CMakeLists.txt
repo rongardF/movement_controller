@@ -57,6 +57,20 @@ install(
   RUNTIME DESTINATION bin
 )
 
+# Install the interface definitions into share/ so `ros2 interface show`
+# (and other tools that read interface files) can find them. SKIP_INSTALL
+# above prevents rosidl from doing this automatically, so do it explicitly.
+# The .idl is what `ros2 interface show` reads; the source .msg is installed
+# alongside it to match the standard rosidl package layout.
+install(
+  FILES "msg/BeamTriggered.msg"
+  DESTINATION "share/${PROJECT_NAME}/msg"
+)
+install(
+  FILES "${CMAKE_CURRENT_BINARY_DIR}/rosidl_adapter/${PROJECT_NAME}/msg/BeamTriggered.idl"
+  DESTINATION "share/${PROJECT_NAME}/msg"
+)
+
 install(
   DIRECTORY launch urdf srdf model
   DESTINATION share/${PROJECT_NAME}

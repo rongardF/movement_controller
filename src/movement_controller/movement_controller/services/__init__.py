@@ -25,4 +25,14 @@
 # ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 # POSSIBILITY OF SUCH DAMAGE.
 
+from movement_controller.services.base_planner_service import BasePlannerService
 from movement_controller.services.pilz_planner_service import PilzPlannerService
+from movement_controller.services.ompl_planner_service import OmplPlannerService
+from movement_controller.services.planning_coordinator import PlanningCoordinator
+
+__all__ = [
+    'BasePlannerService',
+    'PilzPlannerService',
+    'OmplPlannerService',
+    'PlanningCoordinator',
+]

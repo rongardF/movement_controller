@@ -24,13 +24,14 @@
 # CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
 # ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 # POSSIBILITY OF SUCH DAMAGE.
-"""Integration tests for MovementController + PilzPlannerService.
+"""Integration tests for MovementController + PlanningCoordinator.
 
 These tests exercise the full stack with a real ROS2 middleware, replacing only
 the external move_group process with a minimal ``MockMoveGroupNode`` that provides:
 
   - Service  ``/move_group/get_planning_scene``  (GetPlanningScene)
   - Service  ``/move_group/plan_sequence_path``   (GetMotionSequence)
+  - Service  ``/move_group/plan_kinematic_path``  (GetMotionPlan)
   - Action   ``/move_group/execute_trajectory``   (moveit_msgs/ExecuteTrajectory)
 
 The ``MockMoveGroupNode`` exposes ``planning_success`` / ``execution_success``
@@ -57,7 +58,7 @@ from rclpy.node import Node
 from geometry_msgs.msg import Point, PoseStamped
 from moveit_msgs.action import ExecuteTrajectory as MoveItExecuteTrajectory
 from moveit_msgs.msg import MoveItErrorCodes, RobotState, RobotTrajectory
-from moveit_msgs.srv import GetMotionSequence, GetPlanningScene
+from moveit_msgs.srv import GetMotionPlan, GetMotionSequence, GetPlanningScene
 from trajectory_msgs.msg import JointTrajectoryPoint
 
 from movement_controller.action import (
@@ -101,14 +102,16 @@ _PATH_ID_3 = '00000000-0000-4000-8000-000000000003'
 class MockMoveGroupNode(Node):
     """Minimal mock that replaces move_group for integration testing.
 
-    Provides the three ROS2 interfaces consumed by MovementController and
-    PilzPlannerService.  All handlers are synchronous for simplicity.
+    Provides the ROS2 interfaces consumed by MovementController and its
+    PlanningCoordinator (PILZ ``plan_sequence_path`` and OMPL
+    ``plan_kinematic_path``).  All handlers are synchronous for simplicity.
 
     Attributes:
-        planning_success: When False, plan_sequence returns an error code.
+        planning_success: When False, plan_sequence/plan_kinematic return an error code.
         execution_success: When False, execute_trajectory aborts the goal.
         scene_request_count: Number of get_planning_scene calls received.
         plan_request_count: Number of plan_sequence_path calls received.
+        ompl_request_count: Number of plan_kinematic_path calls received.
         exec_request_count: Number of execute_trajectory goals received.
     """
 
@@ -119,6 +122,7 @@ class MockMoveGroupNode(Node):
         self.execution_success: bool = True
         self.scene_request_count: int = 0
         self.plan_request_count: int = 0
+        self.ompl_request_count: int = 0
         self.exec_request_count: int = 0
 
         cb = ReentrantCallbackGroup()
@@ -133,6 +137,12 @@ class MockMoveGroupNode(Node):
             GetMotionSequence,
             'plan_sequence_path',
             self._handle_plan_sequence,
+            callback_group=cb,
+        )
+        self._ompl_srv = self.create_service(
+            GetMotionPlan,
+            'plan_kinematic_path',
+            self._handle_plan_kinematic,
             callback_group=cb,
         )
         self._exec_action = ActionServer(
@@ -189,6 +199,19 @@ class MockMoveGroupNode(Node):
         response.response.planned_trajectories = [self._make_trajectory()]
         return response
 
+    def _handle_plan_kinematic(
+        self,
+        request: GetMotionPlan.Request,
+        response: GetMotionPlan.Response,
+    ) -> GetMotionPlan.Response:
+        self.ompl_request_count += 1
+        if not self.planning_success:
+            response.motion_plan_response.error_code.val = MoveItErrorCodes.FAILURE
+            return response
+        response.motion_plan_response.error_code.val = MoveItErrorCodes.SUCCESS
+        response.motion_plan_response.trajectory = self._make_trajectory()
+        return response
+
     def _handle_execute_trajectory(
         self, goal_handle: ServerGoalHandle
     ) -> MoveItExecuteTrajectory.Result:
@@ -209,6 +232,7 @@ class MockMoveGroupNode(Node):
         """Reset counters and behaviour flags.  Call at the start of each test."""
         self.scene_request_count = 0
         self.plan_request_count = 0
+        self.ompl_request_count = 0
         self.exec_request_count = 0
         self.planning_success = planning_success
         self.execution_success = execution_success

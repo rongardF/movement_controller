@@ -34,7 +34,6 @@ src/movement_controller/
 |  |- movement_controller.launch.py
 |  `- ur.launch.py
 |- config/
-|  |- joint_constraints.yaml
 |  |- joint_limits.yaml
 |  `- pilz_cartesian_limits.yaml
 `- tests/
@@ -179,10 +178,6 @@ The node declares and validates these parameter groups:
 	- `constraints.workspace.x_min`, `x_max`
 	- `constraints.workspace.y_min`, `y_max`
 	- `constraints.workspace.z_min`, `z_max`
-- Joint constraints:
-	- `constraints.joint.names`
-	- `constraints.joint.lower_limits`
-	- `constraints.joint.upper_limits`
 - Orientation tolerances:
 	- `constraints.orientation.tolerance_x`
 	- `constraints.orientation.tolerance_y`
@@ -193,8 +188,14 @@ The node declares and validates these parameter groups:
 	- `constraints.max_joint_speed`
 	- `constraints.max_joint_acceleration`
 
-Default speed and joint constraint values are loaded from files in `config/`
+Default speed constraint values are loaded from files in `config/`
 through the launch setup.
+
+Per-joint position envelopes are enforced globally as C-space bounds: the
+launch setup reads `config/joint_limits.yaml` and passes the
+`robot_description_planning.joint_limits.<joint>.{min_position,max_position}`
+values to `move_group`, so every planner (OMPL, PILZ) respects them without
+adding per-request joint path constraints.
 
 ## Speed and Acceleration Notes
 

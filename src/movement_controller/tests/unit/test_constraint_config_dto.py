@@ -26,7 +26,6 @@
 # POSSIBILITY OF SUCH DAMAGE.
 """Unit tests for ConstraintConfigDTO and PilzPlannerService constraint-building methods."""
 
-import math
 from unittest.mock import MagicMock
 
 import pytest
@@ -85,22 +84,6 @@ def test_workspace_disabled_requires_all_axes_at_sentinel():
     assert dto.workspace_enabled is True
 
 
-def test_joint_constraints_enabled_false_with_empty_names():
-    """Default ConstraintConfigDTO has empty joint_names → joint_constraints_enabled is False."""
-    dto = ConstraintConfigDTO()
-    assert dto.joint_constraints_enabled is False
-
-
-def test_joint_constraints_enabled_true_with_names():
-    """Providing joint_names → joint_constraints_enabled is True."""
-    dto = ConstraintConfigDTO(
-        joint_names=['j1'],
-        joint_lower_limits=[-1.0],
-        joint_upper_limits=[1.0],
-    )
-    assert dto.joint_constraints_enabled is True
-
-
 def test_orientation_constraint_enabled_false_at_defaults():
     """Default tolerances of 2π → orientation_constraint_enabled is False."""
     dto = ConstraintConfigDTO()
@@ -131,15 +114,6 @@ def test_validation_error_z_min_greater_than_z_max():
     """z_min > z_max raises ValidationError."""
     with pytest.raises(ValidationError):
         ConstraintConfigDTO(z_min=1.0, z_max=0.5)
-
-
-def test_validation_error_joint_array_length_mismatch():
-    """joint_lower_limits missing (length mismatch) raises ValidationError."""
-    with pytest.raises(ValidationError):
-        ConstraintConfigDTO(
-            joint_names=['j1', 'j2'],
-            joint_lower_limits=[-1.0],
-        )
 
 # endregion: ConstraintConfigDTO validation tests
 
@@ -195,41 +169,6 @@ def test_build_path_constraints_box_link_name():
     svc = _make_service(dto)
     c = svc._build_path_constraints('my_tool')
     assert c.position_constraints[0].link_name == 'my_tool'
-
-
-def test_build_path_constraints_joint_midpoint_and_tolerances():
-    """Joint constraint uses midpoint as position with symmetric tolerances."""
-    dto = ConstraintConfigDTO(
-        joint_names=['j1'],
-        joint_lower_limits=[-1.0],
-        joint_upper_limits=[1.0],
-    )
-    svc = _make_service(dto)
-    c = svc._build_path_constraints('tool0')
-
-    assert len(c.joint_constraints) == 1
-    jc = c.joint_constraints[0]  # type: ignore
-    assert jc.joint_name == 'j1'
-    assert jc.position == pytest.approx(0.0)          # (-1.0 + 1.0) / 2
-    assert jc.tolerance_above == pytest.approx(1.0)   # 1.0 - 0.0
-    assert jc.tolerance_below == pytest.approx(1.0)   # 0.0 - (-1.0)
-    assert jc.weight == pytest.approx(1.0)
-
-
-def test_build_path_constraints_multiple_joints():
-    """Multiple joint constraints are all added with correct midpoints."""
-    dto = ConstraintConfigDTO(
-        joint_names=['j1', 'j2'],
-        joint_lower_limits=[-1.0, 0.0],
-        joint_upper_limits=[1.0, 2.0],
-    )
-    svc = _make_service(dto)
-    c = svc._build_path_constraints('tool0')
-
-    assert len(c.joint_constraints) == 2
-    assert c.joint_constraints[0].joint_name == 'j1'  # type: ignore
-    assert c.joint_constraints[1].joint_name == 'j2'  # type: ignore
-    assert c.joint_constraints[1].position == pytest.approx(1.0)   # (0.0+2.0)/2 # type: ignore
 
 
 def test_build_path_constraints_orientation_fields():

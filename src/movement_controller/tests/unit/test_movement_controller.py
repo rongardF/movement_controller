@@ -46,7 +46,7 @@ from movement_controller.action import ExecuteTrajectory
 
 from movement_controller.models import PlanResultDTO, TrajectoryGoalDTO
 from movement_controller.models.constraint_config_dto import ConstraintConfigDTO
-from movement_controller.services import PilzPlannerService
+from movement_controller.services import PlanningCoordinator
 from movement_controller.movement_controller import MovementController
 
 # Resolve TYPE_CHECKING forward reference so Pydantic can instantiate PlanResultDTO in tests.
@@ -165,8 +165,8 @@ def _make_plan_result_dto(path_ids: list, success: bool = True, error_message: s
 
 
 def _make_mock_planner_with_results(plan_results: list):
-    """Build a mock PilzPlannerService that yields the given PlanResultDTOs."""
-    mock_planner = MagicMock(spec=PilzPlannerService)
+    """Build a mock PlanningCoordinator that yields the given PlanResultDTOs."""
+    mock_planner = MagicMock(spec=PlanningCoordinator)
     mock_planner.plan_all.return_value = True
     mock_planner.iterate_planned_trajectories = MagicMock(return_value=iter(plan_results))
     return mock_planner
@@ -306,7 +306,7 @@ def test_cancel_callback_returns_accept(node):
 
 def test_cancel_callback_calls_planner_cancel_when_configured(node):
     """_cancel_callback() calls planner.cancel() when a planner service is set."""
-    mock_planner = MagicMock(spec=PilzPlannerService)
+    mock_planner = MagicMock(spec=PlanningCoordinator)
     node._planner_service = mock_planner
 
     result = node._cancel_callback(MagicMock(spec=CancelGoal.Request))
@@ -325,29 +325,14 @@ def test_cancel_callback_safe_when_planner_not_configured(node):
 # endregion: cancel callback
 
 # region: lifecycle node callbacks
-def _set_array_constraint_params(node) -> None:
-    """Set STRING_ARRAY / DOUBLE_ARRAY constraint params to empty lists.
-
-    These parameters are declared without defaults in MovementController.__init__
-    (added in Phase 5 Plan 01). Tests that call on_configure() must initialize them
-    to avoid ParameterUninitializedException.
-    """
-    node.set_parameters([
-        Parameter('constraints.joint.names', Parameter.Type.STRING_ARRAY, []),
-        Parameter('constraints.joint.lower_limits', Parameter.Type.DOUBLE_ARRAY, []),
-        Parameter('constraints.joint.upper_limits', Parameter.Type.DOUBLE_ARRAY, []),
-    ])
-
-
 def test_on_configure_creates_planner_service(node):
-    """on_configure() instantiates PilzPlannerService and stores it on the node."""
+    """on_configure() instantiates PlanningCoordinator and stores it on the node."""
     assert node._planner_service is None
-    _set_array_constraint_params(node)
     mock_state = LifecycleState(label='unconfigured', state_id=0)
 
     with patch(
-        'movement_controller.movement_controller.PilzPlannerService',
-        return_value=MagicMock(spec=PilzPlannerService),
+        'movement_controller.movement_controller.PlanningCoordinator',
+        return_value=MagicMock(spec=PlanningCoordinator),
     ):
         result = node.on_configure(mock_state)
 
@@ -357,18 +342,36 @@ def test_on_configure_creates_planner_service(node):
 
 
 def test_on_configure_uses_moveit_group_name_parameter(node):
-    """on_configure() passes the moveit_group_name parameter value to PilzPlannerService."""
-    _set_array_constraint_params(node)
+    """on_configure() passes the moveit_group_name parameter value to PlanningCoordinator."""
     mock_state = LifecycleState(label='unconfigured', state_id=0)
 
     with patch(
-        'movement_controller.movement_controller.PilzPlannerService',
+        'movement_controller.movement_controller.PlanningCoordinator',
     ) as patched_cls:
-        patched_cls.return_value = MagicMock(spec=PilzPlannerService)
+        patched_cls.return_value = MagicMock(spec=PlanningCoordinator)
         node.on_configure(mock_state)
         _, kwargs = patched_cls.call_args
         assert kwargs.get('moveit_group_name') == 'ur_manipulator'
 
+    node._planner_service = None  # reset
+
+
+def test_on_configure_applies_ompl_tuning(node):
+    """on_configure() reads the OMPL tuning params and forwards them to the coordinator."""
+    node.set_parameters([
+        Parameter('ompl_planning_time', Parameter.Type.DOUBLE, 7.5),
+        Parameter('ompl_planning_attempts', Parameter.Type.INTEGER, 8),
+    ])
+    mock_state = LifecycleState(label='unconfigured', state_id=0)
+    mock_planner = MagicMock(spec=PlanningCoordinator)
+
+    with patch(
+        'movement_controller.movement_controller.PlanningCoordinator',
+        return_value=mock_planner,
+    ):
+        node.on_configure(mock_state)
+
+    mock_planner.set_ompl_tuning.assert_called_once_with(7.5, 8)
     node._planner_service = None  # reset
 
 
@@ -384,7 +387,7 @@ def test_on_activate_returns_failure_when_planner_not_configured(node):
 
 def test_on_activate_returns_failure_when_service_unavailable(node):
     """on_activate() returns FAILURE when wait_for_service times out."""
-    mock_planner = MagicMock(spec=PilzPlannerService)
+    mock_planner = MagicMock(spec=PlanningCoordinator)
     mock_planner.wait_for_service.return_value = False
     node._planner_service = mock_planner
     mock_state = LifecycleState(label='inactive', state_id=1)
@@ -399,7 +402,7 @@ def test_on_activate_returns_failure_when_service_unavailable(node):
 
 def test_on_activate_calls_planner_on_activate_and_wait_for_service(node):
     """on_activate() calls planner.on_activate() then planner.wait_for_service()."""
-    mock_planner = MagicMock(spec=PilzPlannerService)
+    mock_planner = MagicMock(spec=PlanningCoordinator)
     mock_planner.wait_for_service.return_value = True
     node._planner_service = mock_planner
     mock_state = LifecycleState(label='inactive', state_id=1)
@@ -419,7 +422,7 @@ def test_on_activate_calls_planner_on_activate_and_wait_for_service(node):
 
 def test_on_deactivate_cancels_and_deactivates_planner(node):
     """on_deactivate() calls planner.cancel() then planner.on_deactivate()."""
-    mock_planner = MagicMock(spec=PilzPlannerService)
+    mock_planner = MagicMock(spec=PlanningCoordinator)
     node._planner_service = mock_planner
     node._is_executing = True
     mock_state = LifecycleState(label='active', state_id=2)
@@ -459,7 +462,7 @@ def test_on_deactivate_destroys_execute_trajectory_client(node):
 
 def test_on_cleanup_clears_planner_service(node):
     """on_cleanup() sets _planner_service to None."""
-    node._planner_service = MagicMock(spec=PilzPlannerService)
+    node._planner_service = MagicMock(spec=PlanningCoordinator)
     mock_state = LifecycleState(label='inactive', state_id=1)
 
     result = node.on_cleanup(mock_state)

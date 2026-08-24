@@ -24,49 +24,39 @@
 # CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
 # ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 # POSSIBILITY OF SUCH DAMAGE.
-"""Unit tests for PilzPlannerService — all ROS 2 service dependencies mocked."""
+"""Unit tests for the slimmed PilzPlannerService.plan_group_async — all ROS 2 deps mocked."""
 
-from queue import Queue
-from threading import Thread, Event
-from time import sleep
 from typing import Tuple
 from unittest.mock import MagicMock
 
-import pytest
 from rclpy.lifecycle import LifecycleNode
 from rclpy.impl.rcutils_logger import RcutilsLogger
 from rclpy.client import Client
 from geometry_msgs.msg import PoseStamped
-from moveit_msgs.msg import RobotState
 
 from moveit_msgs.msg import (
     MoveItErrorCodes,
     MotionSequenceResponse,
     RobotState,
-    RobotTrajectory
+    RobotTrajectory,
 )
 from moveit_msgs.action import MoveGroupSequence
-from moveit_msgs.srv import GetPlanningScene
 from trajectory_msgs.msg import JointTrajectoryPoint
 
 from movement_controller.enums.motion_type_enum import MotionTypeEnum
 from movement_controller.models.constraint_config_dto import ConstraintConfigDTO
 from movement_controller.models.plan_result_dto import PlanResultDTO
-from movement_controller.models.planning_session_dto import PlanningSessionDTO
 from movement_controller.models.trajectory_path_dto import TrajectoryPathDTO
 from movement_controller.services.pilz_planner_service import PilzPlannerService
 
 
 # Resolve TYPE_CHECKING-only forward references so Pydantic can instantiate these models in tests.
-# Use 'object' as the resolved type so it is accepted by the validator.
 PlanResultDTO.model_rebuild(_types_namespace={'MotionSequenceResponse': object})
-PlanningSessionDTO.model_rebuild(_types_namespace={'RobotState': object})
 
 _UUID = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'
 _UUID2 = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb'
 
 _SEQ_SRV = 'plan_sequence_path'
-_SCENE_SRV = 'get_planning_scene'
 
 
 def _make_path_dto(**overrides) -> TrajectoryPathDTO:
@@ -106,48 +96,28 @@ def _make_default_seq_response():
     return resp
 
 
-def _make_default_scene_response():
-    """Build a default successful GetPlanningScene response mock."""
-    resp = MagicMock(spec=GetPlanningScene.Response)
-    resp.scene.robot_state = MagicMock(spec=RobotState)
-    return resp
-
-
 def _build_service(
     seq_response=None,
-    scene_response=None,
-    scene_available=True,
-    seq_available=True
-) -> Tuple[PilzPlannerService, MagicMock, MagicMock]:
-    """Build an activated PilzPlannerService backed by synchronous mock service clients.
+    seq_available=True,
+) -> Tuple[PilzPlannerService, MagicMock]:
+    """Build an activated PilzPlannerService backed by a synchronous mock service client.
 
-    Sync futures cause the callback chain to execute immediately inside plan_all(),
-    so the queue is fully populated before plan_all() returns.
+    Sync futures cause plan_group_async's done-callback to fire immediately, so the
+    on_result callback is invoked before plan_group_async() returns.
     """
     seq_resp = seq_response if seq_response is not None else _make_default_seq_response()
-    scene_resp = scene_response if scene_response is not None else _make_default_scene_response()
 
     mock_seq_client = MagicMock()
     mock_seq_client.wait_for_service.return_value = seq_available
     mock_seq_client.call_async.side_effect = lambda req: _make_sync_future(seq_resp)
 
-    mock_scene_client = MagicMock()
-    mock_scene_client.wait_for_service.return_value = scene_available
-    mock_scene_client.call_async.side_effect = lambda req: _make_sync_future(scene_resp)
-
     mock_node = MagicMock(spec=LifecycleNode)
     mock_node.get_logger.return_value = MagicMock(spec=RcutilsLogger)
-
-    def create_client_side_effect(**kwargs):
-        if kwargs.get('srv_name') == _SCENE_SRV:
-            return mock_scene_client
-        return mock_seq_client
-
-    mock_node.create_client.side_effect = create_client_side_effect
+    mock_node.create_client.return_value = mock_seq_client
 
     svc = PilzPlannerService(mock_node, 'ur_manipulator')
     svc.on_activate()
-    return svc, mock_seq_client, mock_scene_client
+    return svc, mock_seq_client
 
 
 # region: Constructor and lifecycle tests
@@ -160,19 +130,17 @@ def test_constructor_stores_group_name():
     mock_node.get_logger.assert_called_once()
 
 
-def test_constructor_no_clients_before_activate():
-    """Service clients are NOT created in __init__; they are created in on_activate()."""
+def test_constructor_no_client_before_activate():
+    """The service client is NOT created in __init__; it is created in on_activate()."""
     mock_node = MagicMock(spec=LifecycleNode)
     mock_node.get_logger.return_value = MagicMock(spec=RcutilsLogger)
     svc = PilzPlannerService(mock_node, 'ur_manipulator')
     assert svc._plan_seq_client is None
-    assert svc._scene_monitor_client is None
     mock_node.create_client.assert_not_called()
-    mock_node.get_logger.assert_called_once()
 
 
-def test_on_activate_creates_clients():
-    """on_activate() creates both service clients via node.create_client."""
+def test_on_activate_creates_single_client():
+    """on_activate() creates only the plan_sequence_path client via node.create_client."""
     mock_node = MagicMock(spec=LifecycleNode)
     mock_node.get_logger.return_value = MagicMock(spec=RcutilsLogger)
     mock_node.create_client.return_value = MagicMock(spec=Client)
@@ -180,28 +148,23 @@ def test_on_activate_creates_clients():
     svc = PilzPlannerService(mock_node, 'ur_manipulator')
     svc.on_activate()
 
-    assert mock_node.create_client.call_count == 2
-    service_names = [call.kwargs['srv_name'] for call in mock_node.create_client.call_args_list]
-    assert _SEQ_SRV in service_names
-    assert _SCENE_SRV in service_names
+    assert mock_node.create_client.call_count == 1
+    assert mock_node.create_client.call_args.kwargs['srv_name'] == _SEQ_SRV
     assert svc._plan_seq_client is not None
-    assert svc._scene_monitor_client is not None
 
 
-def test_on_deactivate_destroys_clients():
-    """on_deactivate() destroys both service clients and clears the references."""
-    svc, _, _ = _build_service()
+def test_on_deactivate_destroys_client():
+    """on_deactivate() destroys the service client and clears the reference."""
+    svc, _ = _build_service()
     seq_client = svc._plan_seq_client
-    scene_client = svc._scene_monitor_client
 
     svc.on_deactivate()
 
     svc._node.destroy_client.assert_any_call(seq_client)  # type: ignore
-    svc._node.destroy_client.assert_any_call(scene_client)  # type: ignore
     assert svc._plan_seq_client is None
-    assert svc._scene_monitor_client is None
 
 # endregion: Constructor and lifecycle tests
+
 
 # region: wait_for_service tests
 def test_wait_for_service_returns_false_before_activate():
@@ -214,7 +177,7 @@ def test_wait_for_service_returns_false_before_activate():
 
 def test_wait_for_service_delegates_to_client():
     """wait_for_service() delegates to the plan_seq_client with the given timeout."""
-    svc, mock_seq_client, _ = _build_service()
+    svc, mock_seq_client = _build_service()
     mock_seq_client.wait_for_service.return_value = True
 
     result = svc.wait_for_service(timeout_sec=3.0)
@@ -224,68 +187,14 @@ def test_wait_for_service_delegates_to_client():
 
 # endregion: wait_for_service tests
 
-# region: plan_all tests
-def test_plan_all_returns_false_when_scene_service_unavailable():
-    """plan_all() returns False and does not start planning if scene service is unavailable."""
-    svc, _, _ = _build_service(scene_available=False)
 
-    result = svc.plan_all([[_make_path_dto()]])
+# region: plan_group_async tests
+def test_plan_group_async_success_invokes_callback_with_success_dto():
+    """plan_group_async() delivers a successful PlanResultDTO to on_result."""
+    svc, _ = _build_service()
+    results: list[PlanResultDTO] = []
 
-    assert result is False
-    assert svc._plan_queue is None
-
-
-def test_plan_all_returns_true_and_enqueues_results():
-    """plan_all() returns True and the callback chain populates the queue synchronously."""
-    svc, _, _ = _build_service()
-
-    result = svc.plan_all([[_make_path_dto()]])
-
-    assert result is True
-    assert svc._plan_queue is not None
-    results = list(svc.iterate_planned_trajectories())
-    assert len(results) == 1
-    assert results[0].success is True
-
-
-def test_plan_all_creates_fresh_queue_per_call():
-    """plan_all() creates a new queue.Queue on each call (fresh per goal invocation)."""
-    svc, _, _ = _build_service()
-    path = _make_path_dto()
-
-    svc.plan_all([[path]])
-    q1 = svc._plan_queue
-    list(svc.iterate_planned_trajectories())
-
-    svc.plan_all([[path]])
-    q2 = svc._plan_queue
-    list(svc.iterate_planned_trajectories())
-
-    assert q1 is not q2, 'plan_all() must create a fresh queue.Queue per call'
-
-# endregion: plan_all tests
-
-# region: iterate_planned_trajectories tests
-def test_iterate_yields_error_before_plan_all():
-    """iterate_planned_trajectories() yields a single failure DTO when called before plan_all()."""
-    svc, _, _ = _build_service()
-    results = list(svc.iterate_planned_trajectories())
-    assert len(results) == 1
-    assert results[0].success is False
-    assert 'plan queue not initialized' in results[0].error_message
-
-
-def test_iterate_yields_single_path_result():
-    """iterate_planned_trajectories yields PlanResultDTOs from the queue, then terminates."""
-    svc, _, _ = _build_service()
-    svc._plan_queue = Queue()
-    svc._cancel_event = Event()
-
-    dto = PlanResultDTO(success=True, path_ids=[_UUID], blended=False)
-    svc._plan_queue.put(dto)
-    svc._plan_queue.put(StopIteration())
-
-    results = list(svc.iterate_planned_trajectories())
+    svc.plan_group_async([_make_path_dto()], RobotState(), results.append)
 
     assert len(results) == 1
     assert results[0].success is True
@@ -293,103 +202,68 @@ def test_iterate_yields_single_path_result():
     assert results[0].blended is False
 
 
-def test_iterate_blended_group_sets_blended_true():
-    """Two-path group result with blended=True and both path IDs is yielded correctly."""
-    svc, _, _ = _build_service()
-    svc._plan_queue = Queue()
-    svc._cancel_event = Event()
+def test_plan_group_async_multi_path_group_sets_blended_and_path_ids():
+    """A two-path group yields blended=True and both path IDs in order."""
+    svc, _ = _build_service()
+    results: list[PlanResultDTO] = []
+    group = [_make_path_dto(path_id=_UUID), _make_path_dto(path_id=_UUID2)]
 
-    dto = PlanResultDTO(
-        success=True,
-        path_ids=[_UUID, _UUID2],
-        blended=True,
-    )
-    svc._plan_queue.put(dto)
-    svc._plan_queue.put(StopIteration())
+    svc.plan_group_async(group, RobotState(), results.append)
 
-    results = list(svc.iterate_planned_trajectories())
     assert len(results) == 1
+    assert results[0].success is True
     assert results[0].blended is True
     assert results[0].path_ids == [_UUID, _UUID2]
 
-# endregion: iterate_planned_trajectories tests
 
-# region: cancel tests
-def test_cancel_terminates_iterator_cleanly():
-    """cancel() while the iterator is blocked on an empty queue causes it to unblock and terminate
-    with a single failure DTO (no exception raised).
-    """
-    # Use a non-sync future so the callback never fires — queue remains empty after plan_all()
-    blocking_future = MagicMock()
-
-    def never_call_callback(cb):
-        pass  # intentionally do not call the callback
-
-    blocking_future.add_done_callback = never_call_callback
-
-    mock_seq_client = MagicMock(spec=Client)
-    mock_seq_client.wait_for_service.return_value = True
-    mock_seq_client.call_async.return_value = blocking_future
-
-    mock_scene_client = MagicMock(spec=Client)
-    mock_scene_client.wait_for_service.return_value = True
-    mock_scene_client.call_async.return_value = blocking_future
-
+def test_plan_group_async_client_not_initialised_yields_failure():
+    """plan_group_async() before on_activate() delivers a failure DTO (no client)."""
     mock_node = MagicMock(spec=LifecycleNode)
     mock_node.get_logger.return_value = MagicMock(spec=RcutilsLogger)
-
-    def create_client_side_effect(**kwargs):
-        if kwargs.get('srv_name') == _SCENE_SRV:
-            return mock_scene_client
-        return mock_seq_client
-
-    mock_node.create_client.side_effect = create_client_side_effect
-
     svc = PilzPlannerService(mock_node, 'ur_manipulator')
-    svc.on_activate()
-    svc.plan_all([[_make_path_dto()]])
+    results: list[PlanResultDTO] = []
 
-    # Cancel after a brief delay to unblock the iterator
-    def do_cancel():
-        sleep(0.05)
-        svc.cancel()
+    svc.plan_group_async([_make_path_dto()], RobotState(), results.append)
 
-    Thread(target=do_cancel, daemon=True).start()
-
-    # Iterator should yield a failure DTO and terminate cleanly within 2 seconds
-    done_event = Event()
-    results = []
-
-    def drain():
-        results.extend(svc.iterate_planned_trajectories())
-        done_event.set()
-
-    Thread(target=drain, daemon=True).start()
-    assert done_event.wait(timeout=2.0), 'Iterator did not terminate after cancel() — possible hang'
     assert len(results) == 1
     assert results[0].success is False
+    assert 'not initialised' in results[0].error_message
 
 
-# endregion: cancel tests
+def test_plan_group_async_planning_failure_yields_failure_dto():
+    """A GetMotionSequence response with error_code != SUCCESS yields a failure DTO."""
+    fail_resp = MagicMock(spec=MoveGroupSequence.Result)
+    fail_resp.response.error_code.val = MoveItErrorCodes.PLANNING_FAILED
+    svc, _ = _build_service(seq_response=fail_resp)
+    results: list[PlanResultDTO] = []
+
+    svc.plan_group_async([_make_path_dto()], RobotState(), results.append)
+
+    assert len(results) == 1
+    assert results[0].success is False
+    assert results[0].error_message != ''
+
+
+# endregion: plan_group_async tests
+
 
 # region: _generate_motion_sequence_request tests
-
 def test_last_item_blend_radius_forced_to_zero():
     """In a 2-path group the last MotionSequenceItem always has blend_radius=0.0 (PILZ constraint)."""
-    svc, _, _ = _build_service()
+    svc, _ = _build_service()
     path1 = _make_path_dto(path_id=_UUID, blend_radius=0.05)
     path2 = _make_path_dto(path_id=_UUID2, blend_radius=0.05)
 
     seq_req = svc._generate_motion_sequence_request([path1, path2], RobotState())  # type: ignore
 
     assert len(seq_req.items) == 2
-    assert seq_req.items[0].blend_radius == 0.05, 'First item should keep its original blend_radius' # type: ignore
+    assert seq_req.items[0].blend_radius == 0.05, 'First item should keep its original blend_radius'  # type: ignore
     assert seq_req.items[-1].blend_radius == 0.0, 'Last item blend_radius must be forced to 0.0'  # type: ignore
 
 
 def test_generate_request_maps_motion_type_to_planner_id():
     """_generate_motion_sequence_request maps MotionTypeEnum to the correct PILZ planner_id."""
-    svc, _, _ = _build_service()
+    svc, _ = _build_service()
     for motion_type, expected_planner_id in [
         (MotionTypeEnum.LIN, 'LIN'),
         (MotionTypeEnum.PTP, 'PTP'),
@@ -402,7 +276,7 @@ def test_generate_request_maps_motion_type_to_planner_id():
 
 def test_generate_request_sets_start_state_on_first_item_only():
     """start_state is assigned only to the first MotionSequenceItem."""
-    svc, _, _ = _build_service()
+    svc, _ = _build_service()
     start = RobotState()
     path1 = _make_path_dto(path_id=_UUID)
     path2 = _make_path_dto(path_id=_UUID2)
@@ -410,47 +284,15 @@ def test_generate_request_sets_start_state_on_first_item_only():
     seq_req = svc._generate_motion_sequence_request([path1, path2], start)  # type: ignore
 
     assert seq_req.items[0].req.start_state is start  # type: ignore
-    # Subsequent items should not be the same object as start
     assert seq_req.items[1].req.start_state is not start  # type: ignore
 
 # endregion: _generate_motion_sequence_request tests
 
-# region: planning-failure / error-path tests
-def test_planning_failure_yields_failure_dto():
-    """A GetMotionSequence response with error_code != SUCCESS yields a failure PlanResultDTO."""
-    fail_resp = MagicMock(spec=MoveGroupSequence.Result)
-    fail_resp.response.error_code.val = MoveItErrorCodes.PLANNING_FAILED
-    svc, _, _ = _build_service(seq_response=fail_resp)
-
-    svc.plan_all([[_make_path_dto()]])
-
-    results = list(svc.iterate_planned_trajectories())
-    assert len(results) == 1
-    assert results[0].success is False
-    assert results[0].error_message != ''
-
-
-def test_scene_retrieval_failure_yields_failure_dto():
-    """A GetPlanningScene response with no robot_state yields a failure PlanResultDTO."""
-    scene_resp = MagicMock(spec=GetPlanningScene.Response)
-    scene_resp.scene.robot_state = None  # triggers the guard in _initiate_planning
-    svc, _, _ = _build_service(scene_response=scene_resp)
-
-    svc.plan_all([[_make_path_dto()]])
-
-    results = list(svc.iterate_planned_trajectories())
-    assert len(results) == 1
-    assert results[0].success is False
-    assert results[0].error_message != ''
-
-# endregion: planning-failure / error-path tests
-
 
 # region: set_constraints and constraint injection tests
-
 def test_set_constraints_stores_dto():
     """set_constraints() stores the dto as _constraint_config."""
-    svc, _, _ = _build_service()
+    svc, _ = _build_service()
     dto = ConstraintConfigDTO()
     svc.set_constraints(dto)
     assert svc._constraint_config is dto
@@ -460,7 +302,7 @@ def test_constraints_injected_into_every_sequence_item():
     """Active workspace constraint is injected into every MotionSequenceItem."""
     from shape_msgs.msg import SolidPrimitive
 
-    svc, _, _ = _build_service()
+    svc, _ = _build_service()
     dto = ConstraintConfigDTO(x_min=-1.0, x_max=1.0)
     svc.set_constraints(dto)
 
@@ -477,7 +319,7 @@ def test_constraints_injected_into_every_sequence_item():
 
 def test_constraints_not_injected_when_all_disabled():
     """All-sentinel ConstraintConfigDTO → no constraints in generated items."""
-    svc, _, _ = _build_service()
+    svc, _ = _build_service()
     dto = ConstraintConfigDTO()  # all at sentinel = all disabled
     svc.set_constraints(dto)
 

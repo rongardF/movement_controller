@@ -1,0 +1,38 @@
+# OMPL planning pipeline configuration.
+#
+# Used for PTP motion (collision-aware point-to-point). OMPL is a sampling-based
+# planner that reroutes around collision objects, unlike the Pilz PTP planner
+# which fails on a blocked straight joint-space path.
+#
+# The `planner_configs` block (RRTConnect, RRTstar, ...) is merged automatically
+# from moveit_configs_utils/default_configs/ompl_defaults.yaml by
+# MoveItConfigsBuilder.planning_pipelines() because this file intentionally does
+# not define its own `planner_configs`. Use planner_id "RRTConnect" in the
+# MotionPlanRequest to select the default sampling planner.
+
+planning_plugins:
+  - ompl_interface/OMPLPlanner
+
+# Request adapters run before planning (order matters).
+request_adapters:
+  - default_planning_request_adapters/ResolveConstraintFrames
+  - default_planning_request_adapters/ValidateWorkspaceBounds
+  - default_planning_request_adapters/CheckStartStateBounds
+  - default_planning_request_adapters/CheckStartStateCollision
+
+# Response adapters run after planning (order matters).
+# AddTimeOptimalParameterization (TOTG) re-times the collision-free OMPL path to
+# be time-optimal within joint velocity/acceleration limits. It only assigns
+# timestamps/velocities and does not modify path geometry, so OMPL's
+# collision-free guarantee is preserved.
+response_adapters:
+  - default_planning_response_adapters/AddTimeOptimalParameterization
+  - default_planning_response_adapters/ValidateSolution
+  - default_planning_response_adapters/DisplayMotionPath
+
+# Group-specific OMPL settings for the UR arm.
+# longest_valid_segment_fraction controls collision-check density along an edge;
+# a smaller value gives denser checks for tighter spaces around obstacles.
+ur_manipulator:
+  default_planner_config: RRTConnect
+  longest_valid_segment_fraction: 0.001

@@ -60,6 +60,7 @@ def generate_launch_description() -> LaunchDescription:
     debug = LaunchConfiguration("debug")
     rviz = LaunchConfiguration("rviz")
     ip_address = LaunchConfiguration("ip_address")
+    gazebo_gui = LaunchConfiguration("gazebo_gui")
 
     declared_arguments = [
         DeclareLaunchArgument(
@@ -92,6 +93,9 @@ def generate_launch_description() -> LaunchDescription:
             default_value="192.168.1.9",
             description="IP address of the robot controller (used for real hardware).",
         ),
+        DeclareLaunchArgument(
+            "gazebo_gui", default_value="true", description="Start gazebo with GUI?"
+        )
     ]
 
     movement_controller_launch = IncludeLaunchDescription(
@@ -124,6 +128,7 @@ def generate_launch_description() -> LaunchDescription:
             "gz_resource_path": PathJoinSubstitution(
                 [station_share, "config", "model"]
             ),
+            "gazebo_gui": gazebo_gui,
         }.items(),
     )
 

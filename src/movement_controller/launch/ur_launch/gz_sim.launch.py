@@ -161,7 +161,7 @@ def launch_setup(context, *args, **kwargs):
             "gz_args": IfElseSubstitution(
                 gazebo_gui,
                 if_value=[" -r -v 4 ", world_file],
-                else_value=[" -s -r -v 4 ", world_file],
+                else_value=[" --headless-rendering -s -r -v 4 ", world_file],
             )
         }.items(),
     )

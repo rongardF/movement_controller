@@ -131,6 +131,9 @@ def declare_arguments() -> list[DeclareLaunchArgument]:
             description=(
                 "Path to the Gazebo resource files."
             ),
+        ),
+        DeclareLaunchArgument(
+            "gazebo_gui", default_value="true", description="Start gazebo with GUI?"
         )
     ]
 
@@ -186,6 +189,8 @@ def _build_ur_launch_arguments(
     }
     # 'world_file' is only consumed by the Gazebo simulation launch file.
     if is_simulated:
+        gazebo_gui = LaunchConfiguration("gazebo_gui")
+        arguments["gazebo_gui"] = gazebo_gui
         arguments["world_file"] = world_file
         arguments["gazebo_sim_resource_path"] = gz_resource_path
     return arguments

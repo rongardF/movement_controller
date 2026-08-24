@@ -43,8 +43,9 @@ from rclpy.publisher import Publisher
 from rcl_interfaces.msg import ParameterDescriptor
 from rclpy.qos import qos_profile_sensor_data
 
-from std_msgs.msg import Bool
 from sensor_msgs.msg import LaserScan
+
+from laser_sensors.msg import BeamTriggered
 
 
 class CaptronORL2(Node):
@@ -72,10 +73,11 @@ class CaptronORL2(Node):
             ),
         ).get_parameter_value().double_value
 
-        # Publish each PNP-NO output as its own latched boolean so consumers see
-        # an identical topic layout whether the sensor is real or simulated.
-        self._output_1_pub = self.create_publisher(Bool, f'{self.get_name()}/x_axis_triggered', 10)
-        self._output_2_pub = self.create_publisher(Bool, f'{self.get_name()}/y_axis_triggered', 10)
+        # Publish each PNP-NO output as its own stamped boolean so consumers see
+        # an identical topic layout whether the sensor is real or simulated and
+        # can rely on the header timestamp for each triggered state.
+        self._output_1_pub = self.create_publisher(BeamTriggered, f'{self.get_name()}/x_axis_triggered', 10)
+        self._output_2_pub = self.create_publisher(BeamTriggered, f'{self.get_name()}/y_axis_triggered', 10)
 
         if self._simulated:
             self._setup_simulated()
@@ -120,7 +122,11 @@ class CaptronORL2(Node):
             scan.range_min <= distance <= self._detection_distance
             for distance in scan.ranges
         )
-        publisher.publish(Bool(data=interrupted))
+        msg = BeamTriggered()
+        msg.header.stamp = self.get_clock().now().to_msg()
+        msg.header.frame_id = scan.header.frame_id
+        msg.triggered = interrupted
+        publisher.publish(msg)
 
 
 def main(args: list[str] | None = None) -> None:

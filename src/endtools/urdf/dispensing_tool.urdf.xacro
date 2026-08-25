@@ -36,6 +36,13 @@
         <xacro:insert_block name="origin"/>
     </joint>
 
+    <link name="${name}_endtool_tip_uncalibrated"/>
+
+    <joint name="${name}_endtool_tip_joint" type="fixed">
+        <parent link="${name}_endtool_link"/>
+        <child link="${name}_endtool_tip_uncalibrated"/>
+        <origin xyz="0.0837 0 -0.267" rpy="1.570797 0 1.570797"/>
+    </joint>
     
   </xacro:macro>
 

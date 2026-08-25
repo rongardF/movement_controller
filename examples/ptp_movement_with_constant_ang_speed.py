@@ -63,29 +63,6 @@ def main():
 
     paths = []
 
-    # Cross laser center point
-    target_laser = PoseStamped()
-    target_laser.header.frame_id = "base_link"
-    target_laser.header.stamp = controller.get_clock().now().to_msg()
-    target_laser.pose.position.x = 0.050
-    target_laser.pose.position.y = 0.494
-    target_laser.pose.position.z = 0.070
-    target_laser.pose.orientation.x = -0.001
-    target_laser.pose.orientation.y = 0.706
-    target_laser.pose.orientation.z = 0.708
-    target_laser.pose.orientation.w = -0.009
-    path_laser = TrajectoryPath()
-    path_laser.cartesian_speed = 0.1
-    path_laser.cartesian_acceleration = 2.2
-    path_laser.joint_speed = 0.2
-    path_laser.joint_acceleration = 1.0
-    path_laser.target_pose = target_laser
-    path_laser.motion_type = "PTP"
-    path_laser.path_id = str(uuid.uuid4())
-    path_laser.tool_frame = "dispensing_endtool_tip_uncalibrated"
-    path_laser.blend_radius = 0.0
-    paths.append(path_laser)
-
     # Home position
     target_home = PoseStamped()
     target_home.header.frame_id = "base_link"
@@ -100,14 +77,37 @@ def main():
     path_home = TrajectoryPath()
     path_home.cartesian_speed = 0.1
     path_home.cartesian_acceleration = 2.2
-    path_home.joint_speed = 0.2
-    path_home.joint_acceleration = 1.0
+    path_home.joint_speed = 1.0
+    path_home.joint_acceleration = 2.0
     path_home.target_pose = target_home
     path_home.motion_type = "PTP"
     path_home.path_id = str(uuid.uuid4())
     path_home.tool_frame = "dispensing_endtool_tip_uncalibrated"
     path_home.blend_radius = 0.0
     paths.append(path_home)
+    
+    # Example usage
+    target_rotated = PoseStamped()
+    target_rotated.header.frame_id = "base_link"
+    target_rotated.header.stamp = controller.get_clock().now().to_msg()
+    target_rotated.pose.position.x = 0.698
+    target_rotated.pose.position.y = -0.375
+    target_rotated.pose.position.z = 0.662
+    target_rotated.pose.orientation.x = 0.005
+    target_rotated.pose.orientation.y = 0.704
+    target_rotated.pose.orientation.z = 0.007
+    target_rotated.pose.orientation.w = 0.710
+    path_rotated = TrajectoryPath()
+    path_rotated.cartesian_speed = 0.1
+    path_rotated.cartesian_acceleration = 2.2
+    path_rotated.joint_speed = 1.57
+    path_rotated.joint_acceleration = 2.0  # high accel values will cause overshoot and start state failure
+    path_rotated.target_pose = target_rotated
+    path_rotated.motion_type = "PTP"
+    path_rotated.path_id = str(uuid.uuid4())
+    path_rotated.tool_frame = "dispensing_endtool_tip_uncalibrated"
+    path_rotated.blend_radius = 0.0
+    paths.append(path_rotated)
     
     controller.get_logger().info(f'Calling action')
 

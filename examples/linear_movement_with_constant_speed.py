@@ -1,16 +1,10 @@
 #!/usr/bin/env python3
 import rclpy
 import uuid
-from time import sleep
 from queue import Queue
 from rclpy.action import ActionClient
-from rclpy.action.client import ClientGoalHandle, GoalStatus
 from rclpy.node import Node
-from moveit_msgs.action import MoveGroup
-from moveit_msgs.msg import MotionPlanRequest, Constraints, PositionConstraint, OrientationConstraint
-from geometry_msgs.msg import PoseStamped, Point
-from shape_msgs.msg import SolidPrimitive
-
+from geometry_msgs.msg import PoseStamped
 from movement_controller.action import ExecuteTrajectory
 from movement_controller.msg import TrajectoryPath
 

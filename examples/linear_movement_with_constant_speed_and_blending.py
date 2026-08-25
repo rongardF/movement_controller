@@ -60,59 +60,53 @@ def main():
     if not action_client.wait_for_server(timeout_sec=5.0):
         controller.get_logger().error('ExecuteTrajectory action server not available')
         return
-
-    paths = []
-
-    # Cross laser center point
-    target_laser = PoseStamped()
-    target_laser.header.frame_id = "base_link"
-    target_laser.header.stamp = controller.get_clock().now().to_msg()
-    target_laser.pose.position.x = 0.050
-    target_laser.pose.position.y = 0.494
-    target_laser.pose.position.z = 0.070
-    target_laser.pose.orientation.x = -0.001
-    target_laser.pose.orientation.y = 0.706
-    target_laser.pose.orientation.z = 0.708
-    target_laser.pose.orientation.w = -0.009
-    path_laser = TrajectoryPath()
-    path_laser.cartesian_speed = 0.1
-    path_laser.cartesian_acceleration = 2.2
-    path_laser.joint_speed = 0.2
-    path_laser.joint_acceleration = 1.0
-    path_laser.target_pose = target_laser
-    path_laser.motion_type = "PTP"
-    path_laser.path_id = str(uuid.uuid4())
-    path_laser.tool_frame = "dispensing_endtool_tip_uncalibrated"
-    path_laser.blend_radius = 0.0
-    paths.append(path_laser)
-
-    # Home position
-    target_home = PoseStamped()
-    target_home.header.frame_id = "base_link"
-    target_home.header.stamp = controller.get_clock().now().to_msg()
-    target_home.pose.position.x = 0.70
-    target_home.pose.position.y = -0.1
-    target_home.pose.position.z = 0.4
-    target_home.pose.orientation.x = 0.50368
-    target_home.pose.orientation.y = 0.49173
-    target_home.pose.orientation.z = 0.50988
-    target_home.pose.orientation.w = 0.49449
-    path_home = TrajectoryPath()
-    path_home.cartesian_speed = 0.1
-    path_home.cartesian_acceleration = 2.2
-    path_home.joint_speed = 0.2
-    path_home.joint_acceleration = 1.0
-    path_home.target_pose = target_home
-    path_home.motion_type = "PTP"
-    path_home.path_id = str(uuid.uuid4())
-    path_home.tool_frame = "dispensing_endtool_tip_uncalibrated"
-    path_home.blend_radius = 0.0
-    paths.append(path_home)
+    
+    # Example usage
+    poses = []
+    for xy in [
+        (0.7, -0.1),
+        (0.9, -0.1),
+        (0.9, -0.3),
+        (0.7, -0.3),
+        (0.7, -0.1),
+        (0.9, -0.1),
+        (0.9, -0.3),
+        (0.7, -0.3),
+        (0.7, -0.1),
+    ]:
+        target = PoseStamped()
+        target.header.frame_id = "base_link"
+        target.header.stamp = controller.get_clock().now().to_msg()
+        target.pose.position.x = xy[0]
+        target.pose.position.y = xy[1]
+        target.pose.position.z = 0.4
+        target.pose.orientation.x = 0.50368
+        target.pose.orientation.y = 0.49173
+        target.pose.orientation.z = 0.50988
+        target.pose.orientation.w = 0.49449
+        poses.append(target)
     
     controller.get_logger().info(f'Calling action')
 
     try:
         request = ExecuteTrajectory.Goal()
+        paths = []
+        for idx, target in enumerate(poses):
+            path = TrajectoryPath()
+            path.cartesian_speed = 0.1
+            path.cartesian_acceleration = 2.2
+            path.joint_speed = 0.157
+            path.joint_acceleration = 2.2
+            path.target_pose = target
+            path.motion_type = "LIN"
+            path.path_id = str(uuid.uuid4())
+            path.tool_frame = "dispensing_endtool_tip_uncalibrated"
+            if (1 <= idx < 2) or (6 <= idx < 8):
+                path.blend_radius = 0.05
+            else:
+                path.blend_radius = 0.0
+            paths.append(path)
+
         request.paths = paths
 
         future = action_client.send_goal_async(request, feedback_callback=feedback_callback)

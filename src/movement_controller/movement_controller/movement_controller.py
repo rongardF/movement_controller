@@ -27,11 +27,11 @@
 """URMovementController — ROS2 LifecycleNode for UR robot trajectory execution."""
 
 from math import pi
+from time import sleep
 from threading import Lock, Event
 from asyncio import Future
 
 from rclpy import init, shutdown
-from rclpy.duration import Duration
 from pydantic import ValidationError
 from rcl_interfaces.msg import ParameterDescriptor
 from rclpy.action import ActionServer, ActionClient, CancelResponse, GoalResponse
@@ -367,8 +367,13 @@ class MovementController(LifecycleNode):
             self.destroy_publisher(self._cancellation_pub)
             self._cancellation_pub = None
             self.get_logger().info('Cancellation publisher destroyed successfully')
-        # give time for in-flight messages to be processed
-        self.get_clock().sleep_for(Duration(seconds=0.5))
+        # give time for in-flight messages to be processed. Use a wall-clock
+        # sleep here (not self.get_clock().sleep_for): the node clock follows
+        # use_sim_time, and a sim-time sleep inside this transition callback
+        # deadlocks because the /clock subscription that advances sim time
+        # shares this node's default mutually-exclusive callback group and
+        # cannot run while on_deactivate is blocked.
+        sleep(0.5)
         if self._execute_trajectory_client is not None:
             self._execute_trajectory_client.destroy()
             self._execute_trajectory_client = None

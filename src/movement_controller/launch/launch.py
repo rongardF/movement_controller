@@ -125,6 +125,16 @@ def declare_arguments() -> list[DeclareLaunchArgument]:
                 "description semantic, relative to the package share directory."
             ),
         ),
+        DeclareLaunchArgument(
+            "gz_resource_path",
+            default_value="",
+            description=(
+                "Path to the Gazebo resource files."
+            ),
+        ),
+        DeclareLaunchArgument(
+            "gazebo_gui", default_value="true", description="Start gazebo with GUI?"
+        )
     ]
 
 
@@ -151,8 +161,8 @@ def build_moveit_config(family: str, model_value: str, srdf_file: str):
             )
             .pilz_cartesian_limits()
             .planning_pipelines(
-                default_planning_pipeline="pilz_industrial_motion_planner",
-                pipelines=["pilz_industrial_motion_planner"],
+                default_planning_pipeline="ompl",
+                pipelines=["pilz_industrial_motion_planner", "ompl"],
             )
             .to_moveit_configs()
         )
@@ -169,7 +179,7 @@ def build_moveit_config(family: str, model_value: str, srdf_file: str):
 
 
 def _build_ur_launch_arguments(
-    *, model_value: str, ip_address, world_file, urdf_file, is_simulated: bool
+    *, model_value: str, ip_address, world_file, urdf_file, is_simulated: bool, gz_resource_path
 ) -> dict:
     """Map the generic dispatcher arguments to the UR vendor launch arguments."""
     arguments = {
@@ -179,7 +189,10 @@ def _build_ur_launch_arguments(
     }
     # 'world_file' is only consumed by the Gazebo simulation launch file.
     if is_simulated:
+        gazebo_gui = LaunchConfiguration("gazebo_gui")
+        arguments["gazebo_gui"] = gazebo_gui
         arguments["world_file"] = world_file
+        arguments["gazebo_sim_resource_path"] = gz_resource_path
     return arguments
 
 
@@ -196,7 +209,7 @@ VENDOR_LAUNCH_ARGUMENT_BUILDERS = {
 
 
 def build_vendor_launch_arguments(
-    family: str, *, model_value: str, ip_address, world_file, urdf_file, is_simulated: bool
+    family: str, *, model_value: str, ip_address, world_file, urdf_file, is_simulated: bool, gz_resource_path
 ) -> dict:
     """Return the vendor-specific launch arguments for the given robot family.
 
@@ -213,6 +226,7 @@ def build_vendor_launch_arguments(
         world_file=world_file,
         urdf_file=urdf_file,
         is_simulated=is_simulated,
+        gz_resource_path=gz_resource_path,
     )
 
 
@@ -289,50 +303,68 @@ def load_speed_and_acceleration_constraints(family: str) -> dict:
         "constraints.max_joint_acceleration": lowest_acceleration_limit,
     }
 
-def load_joint_constraints(family: str) -> dict:
-    """Load the joint constraints for the given robot family from config file.
+def load_joint_position_limits(family: str) -> dict:
+    """Build the ``robot_description_planning`` joint position-limit parameters
+    for move_group from the joint limits config file.
 
-    The file is expected at
-    ``<share>/config/joint_constraints.yaml`` and to be
-    keyed by the family name, e.g.::
+    These per-joint position limits become the state-space (C-space) bounds
+    that every planner (OMPL, PILZ) respects globally. move_group enforces them
+    for all planning requests, which is how the joint safety envelope is applied.
 
-        ur:
-          shoulder_pan_joint:
-            lower_limits: 2.0
-            upper_limits: 4.5
-          ...
+    The values are read from ``<share>/config/joint_limits.yaml`` (the same file
+    MoveIt already consumes for velocity/acceleration limits). Only joints that
+    declare ``has_position_limits: true`` with ``min_position``/``max_position``
+    are emitted.
 
-    Returns the flattened parameter dict expected by the movement_controller
-    node (parallel ``names``/``lower_limits``/``upper_limits`` lists).
+    Returns a flat parameter dict keyed by the fully-qualified move_group
+    parameter names, e.g.::
+
+        {
+            "robot_description_planning.joint_limits.shoulder_pan_joint.has_position_limits": True,
+            "robot_description_planning.joint_limits.shoulder_pan_joint.min_position": 2.0,
+            "robot_description_planning.joint_limits.shoulder_pan_joint.max_position": 4.5,
+            ...
+        }
+
+    .. note::
+        To source these limits from launch arguments instead of the YAML file
+        later, replace only the ``joint_data`` loading below with a read of the
+        resolved launch-argument values; the returned dict shape and the
+        move_group wiring stay identical.
     """
-    constraints_file = (
+    if family != "ur":
+        raise ValueError(f"No joint position limits defined for robot family '{family}'.")
+
+    joint_limits_file = (
         Path(get_package_share_directory("movement_controller"))
         / "config"
-        / "joint_constraints.yaml"
+        / "joint_limits.yaml"
     )
-    if not constraints_file.is_file():
+    if not joint_limits_file.is_file():
         raise FileNotFoundError(
-            f"Joint constraints file not found for family '{family}': {constraints_file}"
+            f"Joint limits file not found: {joint_limits_file}"
         )
 
-    with constraints_file.open("r") as f:
-        data = yaml.safe_load(f) or {}
+    with joint_limits_file.open("r") as f:
+        joint_data = yaml.safe_load(f) or {}
 
-    if family not in data:
-        raise KeyError(
-            f"Joint constraints file {constraints_file} has no top-level key '{family}'."
-        )
+    joints = joint_data.get("joint_limits", {})
 
-    joints = data[family]
-    names = list(joints.keys())
-    lower_limits = [float(joints[name]["lower_limits"]) for name in names]
-    upper_limits = [float(joints[name]["upper_limits"]) for name in names]
+    params: dict = {}
+    for name, limits in joints.items():
+        if not limits.get("has_position_limits", False):
+            continue
+        if "min_position" not in limits or "max_position" not in limits:
+            raise KeyError(
+                f"Joint '{name}' declares has_position_limits but is missing "
+                f"min_position/max_position in {joint_limits_file}"
+            )
+        prefix = f"robot_description_planning.joint_limits.{name}"
+        params[f"{prefix}.has_position_limits"] = True
+        params[f"{prefix}.min_position"] = float(limits["min_position"])
+        params[f"{prefix}.max_position"] = float(limits["max_position"])
 
-    return {
-        "constraints.joint.names": names,
-        "constraints.joint.lower_limits": lower_limits,
-        "constraints.joint.upper_limits": upper_limits,
-    }
+    return params
 
 
 def setup_robot_nodes(context, *args, **kwargs):
@@ -349,6 +381,7 @@ def setup_robot_nodes(context, *args, **kwargs):
     ip_address = LaunchConfiguration("ip_address")
     world_file = LaunchConfiguration("world_file")
     urdf_file = LaunchConfiguration("urdf_file")
+    gz_resource_path = LaunchConfiguration("gz_resource_path")
 
     # 'simulated' is a boolean-like string ("true"/"false").
     is_simulated = simulated_value.lower() in ("true", "1", "yes", "on")
@@ -379,6 +412,7 @@ def setup_robot_nodes(context, *args, **kwargs):
         world_file=world_file,
         urdf_file=urdf_file,
         is_simulated=is_simulated,
+        gz_resource_path=gz_resource_path,
     )
     robot_driver_launch = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(str(driver_launch_path)),
@@ -388,7 +422,7 @@ def setup_robot_nodes(context, *args, **kwargs):
 
     moveit_config = build_moveit_config(family, model_value, srdf_file_value)
     speed_and_acceleration_constraints = load_speed_and_acceleration_constraints(family)
-    joint_constraints = load_joint_constraints(family)
+    joint_position_limits = load_joint_position_limits(family)
 
     move_group_node = Node(
         package="moveit_ros_move_group",
@@ -396,6 +430,7 @@ def setup_robot_nodes(context, *args, **kwargs):
         output="screen",
         parameters=[
             moveit_config.to_dict(),
+            joint_position_limits,
             {
                 "use_sim_time": sim_time_used,
                 "publish_robot_description_semantic": True,
@@ -410,7 +445,6 @@ def setup_robot_nodes(context, *args, **kwargs):
         package="rviz2",
         executable="rviz2",
         condition=IfCondition(rviz),
-        name="rviz2_moveit",
         output="log",
         arguments=["-d", rviz_config_file],
         parameters=[
@@ -440,8 +474,10 @@ def setup_robot_nodes(context, *args, **kwargs):
             )
         ],
         parameters=[
-            joint_constraints,
-            speed_and_acceleration_constraints
+            speed_and_acceleration_constraints,
+            {
+                "use_sim_time": sim_time_used,
+            },
         ],
     )
 

@@ -59,6 +59,16 @@ def _p(path_id: str, blend_radius: float) -> TrajectoryPathDTO:
     )
 
 
+def _pm(path_id: str, motion_type: MotionTypeEnum, blend_radius: float) -> TrajectoryPathDTO:
+    """Build a minimal valid TrajectoryPathDTO with an explicit motion type."""
+    return TrajectoryPathDTO(
+        path_id=path_id,
+        motion_type=motion_type,
+        target_pose=PoseStamped(),
+        blend_radius=blend_radius,
+    )
+
+
 def test_empty_paths_raises():
     """group() raises ValueError when the input list is empty."""
     with pytest.raises(ValueError, match='must not be empty'):
@@ -133,3 +143,78 @@ def test_negative_blend_radius_treated_as_zero():
     assert len(groups) == 2
     assert len(groups[0]) == 1
     assert len(groups[1]) == 1
+
+
+def test_single_ptp_is_own_group():
+    """A single PTP path forms exactly one single-item group."""
+    groups = TrajectoryGrouper.group([_pm(_UUID_A, MotionTypeEnum.PTP, 0.0)])
+    assert len(groups) == 1
+    assert len(groups[0]) == 1
+    assert groups[0][0].path_id == _UUID_A
+
+
+def test_ptp_blend_radius_ignored_stays_isolated():
+    """A PTP with blend_radius > 0 is still isolated; its blend is ignored."""
+    groups = TrajectoryGrouper.group(
+        [_pm(_UUID_A, MotionTypeEnum.PTP, 0.5), _pm(_UUID_B, MotionTypeEnum.LIN, 0.0)]
+    )
+    assert len(groups) == 2
+    assert len(groups[0]) == 1
+    assert groups[0][0].path_id == _UUID_A
+    assert len(groups[1]) == 1
+    assert groups[1][0].path_id == _UUID_B
+
+
+def test_ptp_breaks_open_blended_group():
+    """A PTP closes an open blended group before starting its own group."""
+    # A(0.5, LIN) opens a blend; B is PTP → must not merge into A's group.
+    groups = TrajectoryGrouper.group(
+        [_pm(_UUID_A, MotionTypeEnum.LIN, 0.5), _pm(_UUID_B, MotionTypeEnum.PTP, 0.0)]
+    )
+    assert len(groups) == 2
+    assert len(groups[0]) == 1
+    assert groups[0][0].path_id == _UUID_A
+    assert len(groups[1]) == 1
+    assert groups[1][0].path_id == _UUID_B
+
+
+def test_path_after_ptp_starts_new_group():
+    """A LIN/CIRC path following a PTP starts a fresh group (never merges into PTP)."""
+    groups = TrajectoryGrouper.group(
+        [_pm(_UUID_A, MotionTypeEnum.PTP, 0.0), _pm(_UUID_B, MotionTypeEnum.LIN, 0.3)]
+    )
+    assert len(groups) == 2
+    assert len(groups[0]) == 1
+    assert groups[0][0].path_id == _UUID_A
+    assert len(groups[1]) == 1
+    assert groups[1][0].path_id == _UUID_B
+
+
+def test_mixed_lin_circ_ptp_sequence():
+    """LIN(blend)→LIN→PTP→CIRC(blend)→CIRC groups as [ [L,L], [PTP], [C,C] ]."""
+    paths = [
+        _pm(_UUIDT[0], MotionTypeEnum.LIN, 0.3),
+        _pm(_UUIDT[1], MotionTypeEnum.LIN, 0.0),
+        _pm(_UUIDT[2], MotionTypeEnum.PTP, 0.0),
+        _pm(_UUIDT[3], MotionTypeEnum.CIRC, 0.3),
+        _pm(_UUIDT[4], MotionTypeEnum.CIRC, 0.0),
+    ]
+    groups = TrajectoryGrouper.group(paths)
+    assert len(groups) == 3
+    assert [p.path_id for p in groups[0]] == [_UUIDT[0], _UUIDT[1]]
+    assert [p.path_id for p in groups[1]] == [_UUIDT[2]]
+    assert [p.path_id for p in groups[2]] == [_UUIDT[3], _UUIDT[4]]
+
+
+def test_consecutive_ptp_each_own_group():
+    """Consecutive PTP paths each form their own single-item group."""
+    groups = TrajectoryGrouper.group(
+        [
+            _pm(_UUID_A, MotionTypeEnum.PTP, 0.0),
+            _pm(_UUID_B, MotionTypeEnum.PTP, 0.0),
+            _pm(_UUID_C, MotionTypeEnum.PTP, 0.0),
+        ]
+    )
+    assert len(groups) == 3
+    assert all(len(g) == 1 for g in groups)
+    assert [g[0].path_id for g in groups] == [_UUID_A, _UUID_B, _UUID_C]

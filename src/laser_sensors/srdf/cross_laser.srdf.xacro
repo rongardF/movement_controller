@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<robot xmlns:xacro="http://wiki.ros.org/xacro" name="cross_laser_srdf">
+
+  <xacro:macro name="cross_laser_srdf" params="parent name:=cross_laser tf_prefix:=''">
+    <disable_collisions link1="${name}_laser_sensor_link" link2="${tf_prefix}${parent}" reason="Adjacent" />
+  </xacro:macro>
+
+</robot>

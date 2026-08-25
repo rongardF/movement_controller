@@ -49,20 +49,6 @@ class ConstraintConfigDTO(BaseModel):
     z_min: float = Field(default=-1e9, description='Workspace bounding box z lower bound (m). Sentinel -1e9 = unconstrained.')
     z_max: float = Field(default=1e9, description='Workspace bounding box z upper bound (m). Sentinel +1e9 = unconstrained.')
 
-    # Joint constraints (empty = no joint constraints per D-04)
-    joint_names: list[str] = Field(
-        default_factory=list,
-        description='Joint names for position constraints; empty = no joint constraints.',
-    )
-    joint_lower_limits: list[float] = Field(
-        default_factory=list,
-        description='Lower position limits in radians, matching joint_names order.',
-    )
-    joint_upper_limits: list[float] = Field(
-        default_factory=list,
-        description='Upper position limits in radians, matching joint_names order.',
-    )
-
     # Orientation constraint (default 2*pi = unconstrained per D-04)
     orientation_tolerance_x: float = Field(
         default=2 * math.pi,
@@ -112,20 +98,6 @@ class ConstraintConfigDTO(BaseModel):
             )
         return self
 
-    @model_validator(mode='after')
-    def _validate_joint_arrays(self) -> 'ConstraintConfigDTO':
-        """Ensure joint_names, joint_lower_limits, and joint_upper_limits have matching lengths."""
-        n_names = len(self.joint_names)
-        n_lower = len(self.joint_lower_limits)
-        n_upper = len(self.joint_upper_limits)
-        if any(n > 0 for n in (n_names, n_lower, n_upper)) and not (n_names == n_lower == n_upper):
-            raise ValueError(
-                f'joint_names ({n_names}), joint_lower_limits ({n_lower}), and '
-                f'joint_upper_limits ({n_upper}) must all have the same length'
-            )
-
-        return self
-
     @property
     def workspace_enabled(self) -> bool:
         """Check whether the workspace bounding-box constraint is active.
@@ -142,25 +114,6 @@ class ConstraintConfigDTO(BaseModel):
             self.x_max - self.x_min >= 2e9
             and self.y_max - self.y_min >= 2e9
             and self.z_max - self.z_min >= 2e9
-        )
-
-    @property
-    def joint_constraints_enabled(self) -> bool:
-        """Check whether joint position constraints are active.
-
-        Returns ``True`` when at least one joint name is configured and at
-        least one limit is tighter than the default ``±2π`` range, indicating
-        a meaningful constraint has been set.
-
-        :returns: ``True`` when joint constraints are configured and meaningful.
-        :rtype: bool
-        """
-        return (
-            len(self.joint_names) > 0 and
-            (
-                any(-6.28 < limit for limit in self.joint_lower_limits) or
-                any(limit < 6.28 for limit in self.joint_upper_limits)
-            )
         )
 
     @property

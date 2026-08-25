@@ -161,7 +161,7 @@ def launch_setup(context, *args, **kwargs):
             "gz_args": IfElseSubstitution(
                 gazebo_gui,
                 if_value=[" -r -v 4 ", world_file],
-                else_value=[" -s -r -v 4 ", world_file],
+                else_value=[" --headless-rendering -s -r -v 4 ", world_file],
             )
         }.items(),
     )
@@ -179,7 +179,6 @@ def launch_setup(context, *args, **kwargs):
     nodes_to_start = [
         robot_state_publisher_node,
         joint_state_broadcaster_spawner,
-        # delay_rviz_after_joint_state_broadcaster_spawner,
         initial_joint_controller_spawner_stopped,
         initial_joint_controller_spawner_started,
         gz_launch_description,

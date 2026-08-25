@@ -27,11 +27,11 @@
 """URMovementController — ROS2 LifecycleNode for UR robot trajectory execution."""
 
 from math import pi
+from time import sleep
 from threading import Lock, Event
 from asyncio import Future
 
 from rclpy import init, shutdown
-from rclpy.duration import Duration
 from pydantic import ValidationError
 from rcl_interfaces.msg import ParameterDescriptor
 from rclpy.action import ActionServer, ActionClient, CancelResponse, GoalResponse
@@ -56,7 +56,7 @@ from movement_controller.exceptions import (
 )
 from movement_controller.enums.feedback_status_enum import FeedbackStatusEnum
 from movement_controller.models import TrajectoryGoalDTO, ConstraintConfigDTO
-from movement_controller.services.pilz_planner_service import PilzPlannerService
+from movement_controller.services.planning_coordinator import PlanningCoordinator
 from movement_controller.utils.trajectory_grouper import TrajectoryGrouper
 
 
@@ -80,7 +80,7 @@ class MovementController(LifecycleNode):
         self._goal_handle: ServerGoalHandle | None = None
         self._goal_handle_lock: Lock = Lock()
         self._executing_lock: Lock = Lock()
-        self._planner_service: PilzPlannerService | None = None
+        self._planner_service: PlanningCoordinator | None = None
         self._trajectory_goal: TrajectoryGoalDTO | None = None
         self._constraint_config: ConstraintConfigDTO | None = None
         self._cancellation_pub: Publisher | None = None
@@ -129,23 +129,6 @@ class MovementController(LifecycleNode):
             ParameterDescriptor(description='Workspace bounding box z upper bound (m). Sentinel +1e9 = unconstrained.'),
         )
 
-        # Joint constraint parameters
-        self.declare_parameter(
-            'constraints.joint.names',
-            ["shoulder_pan_joint", "shoulder_lift_joint", "elbow_joint", "wrist_1_joint", "wrist_2_joint", "wrist_3_joint"],
-            ParameterDescriptor(description='Joint names for position constraints (string[]). Empty = no joint constraints.'),
-        )
-        self.declare_parameter(
-            'constraints.joint.lower_limits',
-            [-pi, -pi, -pi, -pi, -pi, -pi],
-            ParameterDescriptor(description='Lower joint position limits in radians, same order as constraints.joint.names.'),
-        )
-        self.declare_parameter(
-            'constraints.joint.upper_limits',
-            [pi, pi, pi, pi, pi, pi],
-            ParameterDescriptor(description='Upper joint position limits in radians, same order as constraints.joint.names.'),
-        )
-
         # Orientation constraint parameters
         self.declare_parameter(
             'constraints.orientation.tolerance_x',
@@ -184,6 +167,18 @@ class MovementController(LifecycleNode):
             0.0,
             ParameterDescriptor(description='Node-level max joint acceleration cap (0..1 ratio, 0.0 = unconstrained). Goals with any path.joint_acceleration exceeding this are rejected.'),
         )
+
+        # OMPL (collision-aware PTP) tuning parameters
+        self.declare_parameter(
+            'ompl_planning_time',
+            5.0,
+            ParameterDescriptor(description='OMPL allowed_planning_time in seconds for collision-aware PTP planning.'),
+        )
+        self.declare_parameter(
+            'ompl_planning_attempts',
+            10,
+            ParameterDescriptor(description='OMPL num_planning_attempts for collision-aware PTP planning.'),
+        )
         # endregion: parameters
 
         # region: callback groups
@@ -193,7 +188,7 @@ class MovementController(LifecycleNode):
 
     # region: lifecycle callbacks
     def on_configure(self, state: LifecycleState) -> TransitionCallbackReturn:
-        """Read and validate parameters, then instantiate the :class:`PilzPlannerService`.
+        """Read and validate parameters, then instantiate the :class:`PlanningCoordinator`.
 
         Reads all constraint parameters declared in :meth:`__init__`, builds a
         :class:`~movement_controller.models.ConstraintConfigDTO`, and passes it
@@ -211,8 +206,8 @@ class MovementController(LifecycleNode):
         # Read and validate constraint parameters
         try:
             moveit_group_name = self.get_parameter('moveit_group_name').get_parameter_value().string_value
-            self._planner_service = PilzPlannerService(node=self, moveit_group_name=moveit_group_name)
-            self.get_logger().info('PilzPlannerService initialised successfully')
+            self._planner_service = PlanningCoordinator(node=self, moveit_group_name=moveit_group_name)
+            self.get_logger().info('PlanningCoordinator initialised successfully')
 
             x_min = self.get_parameter('constraints.workspace.x_min').get_parameter_value().double_value
             x_max = self.get_parameter('constraints.workspace.x_max').get_parameter_value().double_value
@@ -220,9 +215,6 @@ class MovementController(LifecycleNode):
             y_max = self.get_parameter('constraints.workspace.y_max').get_parameter_value().double_value
             z_min = self.get_parameter('constraints.workspace.z_min').get_parameter_value().double_value
             z_max = self.get_parameter('constraints.workspace.z_max').get_parameter_value().double_value
-            names_param = self.get_parameter('constraints.joint.names').get_parameter_value().string_array_value
-            lower_param = self.get_parameter('constraints.joint.lower_limits').get_parameter_value().double_array_value
-            upper_param = self.get_parameter('constraints.joint.upper_limits').get_parameter_value().double_array_value
             tol_x = self.get_parameter('constraints.orientation.tolerance_x').get_parameter_value().double_value
             tol_y = self.get_parameter('constraints.orientation.tolerance_y').get_parameter_value().double_value
             tol_z = self.get_parameter('constraints.orientation.tolerance_z').get_parameter_value().double_value
@@ -239,9 +231,6 @@ class MovementController(LifecycleNode):
                 y_max=y_max,
                 z_min=z_min,
                 z_max=z_max,
-                joint_names=list(names_param),
-                joint_lower_limits=list(lower_param),
-                joint_upper_limits=list(upper_param),
                 orientation_tolerance_x=tol_x,
                 orientation_tolerance_y=tol_y,
                 orientation_tolerance_z=tol_z,
@@ -255,6 +244,14 @@ class MovementController(LifecycleNode):
             self._constraint_config = dto
             self._planner_service.set_constraints(dto)
             self.get_logger().info('Constraint configuration applied successfully')
+
+            ompl_planning_time = self.get_parameter('ompl_planning_time').get_parameter_value().double_value
+            ompl_planning_attempts = self.get_parameter('ompl_planning_attempts').get_parameter_value().integer_value
+            self._planner_service.set_ompl_tuning(ompl_planning_time, ompl_planning_attempts)
+            self.get_logger().info(
+                f'OMPL tuning applied: planning_time={ompl_planning_time}s, '
+                f'planning_attempts={ompl_planning_attempts}'
+            )
         except ValidationError as e:
             self.get_logger().error(f'Constraint parameter validation failed: {e}')
             self._planner_service = None  # ensure planner service is not used if validation fails
@@ -269,7 +266,7 @@ class MovementController(LifecycleNode):
     def on_activate(self, state: LifecycleState) -> TransitionCallbackReturn:
         """Activate the node: start the planner service, create the action server and clients.
 
-        Activates :class:`PilzPlannerService` and waits for the
+        Activates :class:`PlanningCoordinator` and waits for the
         ``plan_sequence_path`` service using the ``moveit_connection_timeout``
         parameter.  On success, creates the
         ``movement_controller/execute_trajectory`` action server and the
@@ -287,9 +284,9 @@ class MovementController(LifecycleNode):
             if self._planner_service is not None:
                 self._planner_service.on_activate()
             else:
-                self.get_logger().error('PilzPlannerService not initialised during on_activate')
+                self.get_logger().error('PlanningCoordinator not initialised during on_activate')
                 return TransitionCallbackReturn.FAILURE
-            self.get_logger().info(f'PilzPlannerService activated successfully')
+            self.get_logger().info(f'PlanningCoordinator activated successfully')
         
             timeout = self.get_parameter('moveit_connection_timeout').get_parameter_value().double_value
             self.get_logger().debug(f'Waiting for plan_sequence_path service (timeout={timeout}s)')
@@ -342,7 +339,7 @@ class MovementController(LifecycleNode):
                 self.get_logger().info('Execute trajectory client destroyed due to activation failure')
             if self._planner_service is not None:
                 self._planner_service.on_deactivate()  # ensure planner service is deactivated if activation fails
-                self.get_logger().info('PilzPlannerService deactivated due to activation failure')
+                self.get_logger().info('PlanningCoordinator deactivated due to activation failure')
             return TransitionCallbackReturn.FAILURE
 
         return TransitionCallbackReturn.SUCCESS
@@ -370,8 +367,13 @@ class MovementController(LifecycleNode):
             self.destroy_publisher(self._cancellation_pub)
             self._cancellation_pub = None
             self.get_logger().info('Cancellation publisher destroyed successfully')
-        # give time for in-flight messages to be processed
-        self.get_clock().sleep_for(Duration(seconds=0.5))
+        # give time for in-flight messages to be processed. Use a wall-clock
+        # sleep here (not self.get_clock().sleep_for): the node clock follows
+        # use_sim_time, and a sim-time sleep inside this transition callback
+        # deadlocks because the /clock subscription that advances sim time
+        # shares this node's default mutually-exclusive callback group and
+        # cannot run while on_deactivate is blocked.
+        sleep(0.5)
         if self._execute_trajectory_client is not None:
             self._execute_trajectory_client.destroy()
             self._execute_trajectory_client = None

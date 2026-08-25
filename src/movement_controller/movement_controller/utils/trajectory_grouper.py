@@ -26,6 +26,7 @@
 # POSSIBILITY OF SUCH DAMAGE.
 """TrajectoryGrouper — groups trajectory paths into blended execution groups."""
 
+from movement_controller.enums.motion_type_enum import MotionTypeEnum
 from movement_controller.models.trajectory_path_dto import TrajectoryPathDTO
 
 
@@ -33,15 +34,36 @@ class TrajectoryGrouper:
     """Stateless utility that implements the D-07 blend grouping algorithm."""
 
     @staticmethod
+    def _effective_blend_radius(path: TrajectoryPathDTO) -> float:
+        """Return the blend radius used for grouping decisions.
+
+        ``PTP`` paths are planned by OMPL, which cannot blend, so their
+        ``blend_radius`` is ignored (treated as ``0.0``) for grouping.  All
+        other motion types use their declared ``blend_radius``.
+
+        :param path: Trajectory path to evaluate.
+        :type path: TrajectoryPathDTO
+        :returns: ``0.0`` for ``PTP`` paths, otherwise ``path.blend_radius``.
+        :rtype: float
+        """
+        if path.motion_type == MotionTypeEnum.PTP:
+            return 0.0
+        return path.blend_radius
+
+    @staticmethod
     def group(paths: list[TrajectoryPathDTO]) -> list[list[TrajectoryPathDTO]]:
         """Group trajectory paths into blended execution groups.
 
-        Consecutive paths where the *previous* path has a ``blend_radius > 0``
-        are merged into one group so they can be submitted as a single PILZ
-        ``MotionSequenceRequest``.  A path with ``blend_radius <= 0`` that
-        follows a blended path closes the current group (becoming the mandatory
-        zero-radius final item).  A path with ``blend_radius <= 0`` that follows
-        another zero-radius path starts a new single-item group.
+        Consecutive paths where the *previous* path has an effective
+        ``blend_radius > 0`` are merged into one group so they can be submitted
+        as a single PILZ ``MotionSequenceRequest``.  A path whose predecessor
+        has an effective ``blend_radius <= 0`` starts a new single-item group.
+
+        ``PTP`` paths are always isolated into their own single-item group
+        (D-2): they are planned by OMPL rather than PILZ, cannot blend, and
+        must not share a group with ``LIN``/``CIRC`` paths.  A ``PTP`` therefore
+        closes any open group before it and forces the following path to start a
+        new group; its ``blend_radius`` is ignored.
 
         :param paths: Non-empty list of validated :class:`~movement_controller.models.TrajectoryPathDTO`
             objects with unique ``path_id`` values (guaranteed by
@@ -59,14 +81,16 @@ class TrajectoryGrouper:
         groups: list[list[TrajectoryPathDTO]] = []
         for i, path in enumerate(paths):
             if i == 0:
+                # First path always starts a new group.
                 groups.append([path])
-            elif path.blend_radius <= 0 and groups[-1][-1].blend_radius > 0:
+            elif path.motion_type == MotionTypeEnum.PTP:
+                # PTP is always isolated into its own single-item group (D-2).
+                groups.append([path])
+            elif TrajectoryGrouper._effective_blend_radius(groups[-1][-1]) > 0:
+                # Predecessor requested a blend (and is not a PTP): merge.
                 groups[-1].append(path)
-            elif path.blend_radius <= 0 and groups[-1][-1].blend_radius <= 0:
-                groups.append([path])
-            elif path.blend_radius > 0 and groups[-1][-1].blend_radius <= 0:
-                groups.append([path])
             else:
-                groups[-1].append(path)
+                # Predecessor closed its group (or was an isolated PTP): new group.
+                groups.append([path])
 
         return groups

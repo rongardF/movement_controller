@@ -64,6 +64,11 @@ def _launch_node(context: LaunchContext):
                     ('simulated_camera/image_raw', "/simulated_camera/image_raw"),
                     ('simulated_camera/camera_info', "/simulated_camera/camera_info"),
                 ],
+                parameters=[
+                    {
+                        "use_sim_time": True
+                    }
+                ]
             ),
         ]
     else:

@@ -30,7 +30,7 @@
 The physical ORL2-40T-2PS6 is a laser *cross* Tool-Center-Point measuring unit:
 two perpendicular laser lines meet at an intersection inside a 40 mm window and
 the device exposes ``2x PNP-NO`` digital outputs, one per beam. An output is
-active whenever an object (typically a robot tool tip) interrupts that beam at
+active whenever an object (typically a tool tip) interrupts that beam at
 the intersection.
 
 Device datasheet and models: https://www.captron.com/products/detail/orl2-40t-2ps6/
@@ -64,15 +64,6 @@ class CaptronORL2(Node):
             ),
         ).get_parameter_value().bool_value
 
-        self._detection_distance: float = self.declare_parameter(
-            'detection_distance',
-            0.04,
-            ParameterDescriptor(
-                description='Maximum beam range, in metres, at which a beam is '
-                'considered interrupted. Defaults to 0.04 m (the 40 mm window).',
-            ),
-        ).get_parameter_value().double_value
-
         # Publish each PNP-NO output as its own stamped boolean so consumers see
         # an identical topic layout whether the sensor is real or simulated and
         # can rely on the header timestamp for each triggered state.
@@ -102,8 +93,7 @@ class CaptronORL2(Node):
             qos_profile_sensor_data,
         )
         self.get_logger().info(
-            f"Simulated Captron ORL2 ready (detection_distance="
-            f"{self._detection_distance:.3f} m): "
+            f"Simulated Captron ORL2 ready. Listening for Gazebo laser scans on "
             f"'simulated_laser_cross/beam_x_axis' -> '{self.get_name()}/x_axis_triggered', "
             f"'simulated_laser_cross/beam_y_axis' -> '{self.get_name()}/y_axis_triggered'"
         )
@@ -119,7 +109,7 @@ class CaptronORL2(Node):
     def _publish_output(self, publisher: Publisher, scan: LaserScan) -> None:
         """Convert a single-ray scan into a beam-interrupted boolean output."""
         interrupted = any(
-            scan.range_min <= distance <= self._detection_distance
+            scan.range_min <= distance <= 0.04
             for distance in scan.ranges
         )
         msg = BeamTriggered()

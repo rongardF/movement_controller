@@ -77,7 +77,7 @@ def main():
     path_laser = TrajectoryPath()
     path_laser.cartesian_speed = 0.1
     path_laser.cartesian_acceleration = 2.2
-    path_laser.joint_speed = 0.2
+    path_laser.joint_speed = 1.5
     path_laser.joint_acceleration = 1.0
     path_laser.target_pose = target_laser
     path_laser.motion_type = "PTP"
@@ -87,27 +87,27 @@ def main():
     paths.append(path_laser)
 
     # Home position
-    target_home = PoseStamped()
-    target_home.header.frame_id = "base_link"
-    target_home.header.stamp = controller.get_clock().now().to_msg()
-    target_home.pose.position.x = 0.70
-    target_home.pose.position.y = -0.1
-    target_home.pose.position.z = 0.4
-    target_home.pose.orientation.x = 0.50368
-    target_home.pose.orientation.y = 0.49173
-    target_home.pose.orientation.z = 0.50988
-    target_home.pose.orientation.w = 0.49449
-    path_home = TrajectoryPath()
-    path_home.cartesian_speed = 0.1
-    path_home.cartesian_acceleration = 2.2
-    path_home.joint_speed = 0.2
-    path_home.joint_acceleration = 1.0
-    path_home.target_pose = target_home
-    path_home.motion_type = "PTP"
-    path_home.path_id = str(uuid.uuid4())
-    path_home.tool_frame = "dispensing_endtool_tip_uncalibrated"
-    path_home.blend_radius = 0.0
-    paths.append(path_home)
+    # target_home = PoseStamped()
+    # target_home.header.frame_id = "base_link"
+    # target_home.header.stamp = controller.get_clock().now().to_msg()
+    # target_home.pose.position.x = 0.70
+    # target_home.pose.position.y = -0.1
+    # target_home.pose.position.z = 0.4
+    # target_home.pose.orientation.x = 0.50368
+    # target_home.pose.orientation.y = 0.49173
+    # target_home.pose.orientation.z = 0.50988
+    # target_home.pose.orientation.w = 0.49449
+    # path_home = TrajectoryPath()
+    # path_home.cartesian_speed = 0.1
+    # path_home.cartesian_acceleration = 2.2
+    # path_home.joint_speed = 2.0
+    # path_home.joint_acceleration = 1.0
+    # path_home.target_pose = target_home
+    # path_home.motion_type = "PTP"
+    # path_home.path_id = str(uuid.uuid4())
+    # path_home.tool_frame = "dispensing_endtool_tip_uncalibrated"
+    # path_home.blend_radius = 0.0
+    # paths.append(path_home)
     
     controller.get_logger().info(f'Calling action')
 

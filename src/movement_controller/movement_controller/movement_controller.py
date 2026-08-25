@@ -171,12 +171,12 @@ class MovementController(LifecycleNode):
         # OMPL (collision-aware PTP) tuning parameters
         self.declare_parameter(
             'ompl_planning_time',
-            10.0,
+            5.0,
             ParameterDescriptor(description='OMPL allowed_planning_time in seconds for collision-aware PTP planning.'),
         )
         self.declare_parameter(
             'ompl_planning_attempts',
-            100,
+            10,
             ParameterDescriptor(description='OMPL num_planning_attempts for collision-aware PTP planning.'),
         )
         # endregion: parameters

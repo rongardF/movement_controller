@@ -3,8 +3,8 @@
 <package format="3">
   <name>cameras</name>
   <version>0.0.0</version>
-  <description>TODO: Package description</description>
-  <maintainer email="dev@movement-controller.local">root</maintainer>
+  <description>Station cameras package</description>
+  <maintainer email="ronnyBravo32@proton.me">Ron Freimann</maintainer>
   <license>BSD-3</license>
 
   <buildtool_depend>ament_cmake</buildtool_depend>

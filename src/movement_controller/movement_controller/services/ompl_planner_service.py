@@ -49,29 +49,6 @@ from movement_controller.models import (
 from movement_controller.services.base_planner_service import BasePlannerService
 
 
-# OMPL pipeline/planner identifiers. 'RRTConnect' is the planner_configs key
-# defined in MoveIt Jazzy's ompl_defaults.yaml (there is no 'RRTConnectkConfigDefault').
-_OMPL_PIPELINE_ID = 'ompl'
-_OMPL_PLANNER_ID = 'RRTConnect'
-
-# Name of the OMPL single-plan service exposed by move_group.
-_PLAN_KINEMATIC_PATH_SRV = 'plan_kinematic_path'
-
-# Default OMPL tuning; overridable via set_tuning() from node parameters (Phase 5).
-_DEFAULT_PLANNING_TIME = 10.0
-_DEFAULT_PLANNING_ATTEMPTS = 5
-
-# MoveIt error codes that most likely indicate the straight/sampled path could
-# not be routed around obstacles within the planning budget.
-_NO_PATH_ERROR_CODES = frozenset(
-    {
-        MoveItErrorCodes.PLANNING_FAILED,
-        MoveItErrorCodes.INVALID_MOTION_PLAN,
-        MoveItErrorCodes.TIMED_OUT,
-    }
-)
-
-
 class OmplPlannerService(BasePlannerService):
     """Plans a single collision-aware PTP path via OMPL (RRTConnect) + TOTG.
 
@@ -88,6 +65,16 @@ class OmplPlannerService(BasePlannerService):
     :class:`~movement_controller.services.planning_coordinator.PlanningCoordinator`.
     """
 
+    # MoveIt error codes that most likely indicate the straight/sampled path could
+    # not be routed around obstacles within the planning budget.
+    _NO_PATH_ERROR_CODES = frozenset(
+        {
+            MoveItErrorCodes.PLANNING_FAILED,
+            MoveItErrorCodes.INVALID_MOTION_PLAN,
+            MoveItErrorCodes.TIMED_OUT,
+        }
+    )
+
     def __init__(self, node: LifecycleNode, moveit_group_name: str) -> None:
         """Initialise the OmplPlannerService.
 
@@ -103,8 +90,8 @@ class OmplPlannerService(BasePlannerService):
         """
         super().__init__(node, moveit_group_name)
         self._plan_client: Client | None = None
-        self._planning_time: float = _DEFAULT_PLANNING_TIME
-        self._num_planning_attempts: int = _DEFAULT_PLANNING_ATTEMPTS
+        self._planning_time: float = 10.0
+        self._num_planning_attempts: int = 5
 
     # region: private methods
     def _build_motion_plan_request(
@@ -122,8 +109,8 @@ class OmplPlannerService(BasePlannerService):
         """
         req = MotionPlanRequest()
         req.group_name = self._group_name
-        req.pipeline_id = _OMPL_PIPELINE_ID
-        req.planner_id = _OMPL_PLANNER_ID
+        req.pipeline_id = 'ompl'
+        req.planner_id = 'RRTConnect'
         req.num_planning_attempts = self._num_planning_attempts
         req.allowed_planning_time = self._planning_time
         req.start_state = start_state
@@ -131,8 +118,6 @@ class OmplPlannerService(BasePlannerService):
             self._build_pose_goal_constraints(path_dto.tool_frame, path_dto.target_pose)
         ]
         req.path_constraints = self._build_path_constraints(path_dto.tool_frame)
-        # joint_speed / joint_acceleration map to scaling factors for PTP (D-7/#7);
-        # blend_radius is intentionally not used for OMPL (D-2).
         (
             req.max_velocity_scaling_factor,
             req.max_acceleration_scaling_factor,
@@ -147,7 +132,7 @@ class OmplPlannerService(BasePlannerService):
 
     def _describe_error(self, error_val: int) -> str:
         """Map a MoveIt error code to a human-readable OMPL planning failure message."""
-        if error_val in _NO_PATH_ERROR_CODES:
+        if error_val in self._NO_PATH_ERROR_CODES:
             return (
                 'OMPL found no collision-free path within the planning budget '
                 f'(a collision object may block all paths); error code {error_val}'
@@ -235,7 +220,7 @@ class OmplPlannerService(BasePlannerService):
         self._logger.debug('Creating plan_kinematic_path (GetMotionPlan) service client')
         self._plan_client = self._node.create_client(
             srv_type=GetMotionPlan,
-            srv_name=_PLAN_KINEMATIC_PATH_SRV,
+            srv_name='plan_kinematic_path',
             callback_group=self._callback_group,
         )
         self._logger.debug('OmplPlannerService service client created')
@@ -297,7 +282,7 @@ class OmplPlannerService(BasePlannerService):
         """Plan a single PTP path asynchronously via OMPL (``plan_kinematic_path``).
 
         The grouper guarantees every PTP path is isolated into its own
-        single-item group (D-2), so only ``group[0]`` is planned; any extra
+        single-item group, so only ``group[0]`` is planned; any extra
         items would indicate a grouping bug and are ignored with a warning.
         Issues a non-blocking ``call_async`` and arranges for the result to be
         delivered to ``on_result`` exactly once (via :meth:`_on_plan_response`).
@@ -319,7 +304,7 @@ class OmplPlannerService(BasePlannerService):
         if len(group) > 1:
             self._logger.warning(
                 f'ompl plan_group_async received {len(group)} paths; PTP paths must be '
-                f'isolated (D-2), planning only the first path {group[0].path_id}'
+                f'isolated, planning only the first path {group[0].path_id}'
             )
 
         path_dto = group[0]

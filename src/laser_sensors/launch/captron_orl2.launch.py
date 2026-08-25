@@ -77,6 +77,7 @@ def _launch_node(context: LaunchContext):
                 parameters=[{
                     'simulated': True,
                     'detection_distance': float(detection_distance),
+                    "use_sim_time": True
                 }],
                 remappings=[
                     ('simulated_laser_cross/beam_x_axis', '/simulated_laser_cross/beam_x_axis'),

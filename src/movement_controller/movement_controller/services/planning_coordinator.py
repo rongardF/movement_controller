@@ -56,13 +56,10 @@ class PlanningCoordinator(BasePlannerService):
 
     The coordinator owns the ``get_planning_scene`` client (to obtain the live
     robot state that seeds the first group) plus one :class:`PilzPlannerService`
-    (LIN/CIRC) and one :class:`OmplPlannerService` (collision-aware PTP).  It
-    exposes the same ``plan_all`` / ``iterate_planned_trajectories`` contract the
-    node used to call on the PILZ service directly, so the node's execution loop
-    is unchanged.
+    (LIN/CIRC) and one :class:`OmplPlannerService` (collision-aware PTP).
 
     Look-ahead is fully asynchronous: after the scene is fetched, each group is
-    routed by its motion type — PTP groups (always isolated, D-2) go to OMPL,
+    routed by its motion type — PTP groups (always isolated) go to OMPL,
     LIN/CIRC groups go to PILZ — via ``plan_group_async``.  Each result is pushed
     onto an internal queue; the successful group's end state is extracted and
     used as the start state for the next group, threading the sequence together
@@ -101,8 +98,8 @@ class PlanningCoordinator(BasePlannerService):
     def _select_service(self, group: list[TrajectoryPathDTO]) -> PilzPlannerService | OmplPlannerService:
         """Select the planner for a group based on its (leading) motion type.
 
-        PTP paths are always isolated into single-item groups by the grouper
-        (D-2), so the group's motion type is fully determined by ``group[0]``.
+        PTP paths are always isolated into single-item groups by the grouper,
+        so the group's motion type is fully determined by ``group[0]``.
 
         :param group: The group about to be planned.
         :type group: list[TrajectoryPathDTO]

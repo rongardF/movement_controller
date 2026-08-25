@@ -52,7 +52,7 @@
       The physical ORL2-40T projects two perpendicular laser lines that meet at
       a single intersection (the TCP measuring point) inside a ~40 mm window.
       Each line is modelled here as a single-ray gpu_lidar that fires across the
-      window; an object entering the window returns a short range on both beams.
+      window; an object entering the window returns a shorter range on both beams.
 
       Both beams are centred on the intersection point, which sits at the sensor
       link origin, optionally pushed out along +Z by 'standoff' metres:

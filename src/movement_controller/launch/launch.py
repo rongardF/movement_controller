@@ -161,7 +161,7 @@ def build_moveit_config(family: str, model_value: str, srdf_file: str):
             )
             .pilz_cartesian_limits()
             .planning_pipelines(
-                default_planning_pipeline="pilz_industrial_motion_planner",
+                default_planning_pipeline="ompl",
                 pipelines=["pilz_industrial_motion_planner", "ompl"],
             )
             .to_moveit_configs()

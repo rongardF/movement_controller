@@ -20,8 +20,8 @@ fi
 . /opt/ros/jazzy/setup.bash
 
 # Source the colcon workspace overlay if it exists (safe no-op if not yet built)
-if [ -f "/workspaces/movement_controller/install/setup.bash" ]; then
-    . /workspaces/movement_controller/install/setup.bash
+if [ -f "/workspaces/autofactory/install/setup.bash" ]; then
+    . /workspaces/autofactory/install/setup.bash
 fi
 
 exec "$@"

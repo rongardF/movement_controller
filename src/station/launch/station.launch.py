@@ -54,6 +54,7 @@ def generate_launch_description() -> LaunchDescription:
     movement_controller_share = FindPackageShare("movement_controller")
     cameras_share = FindPackageShare("cameras")
     laser_sensors_share = FindPackageShare("laser_sensors")
+    io_controllers_share = FindPackageShare("io_controllers")
 
     model = LaunchConfiguration("model")
     simulated = LaunchConfiguration("simulated")
@@ -154,6 +155,21 @@ def generate_launch_description() -> LaunchDescription:
         }.items(),
     )
 
+    gpio_controller_launch = IncludeLaunchDescription(
+        PythonLaunchDescriptionSource(
+            PathJoinSubstitution(
+                [io_controllers_share, "launch", "gpio_controller.launch.py"]
+            )
+        ),
+        launch_arguments={
+            "simulated": simulated,
+            "use_sim_time": simulated,
+            "config_file": PathJoinSubstitution(
+                [station_share, "config", "ur10_io_config.yaml"]
+            ),
+        }.items(),
+    )
+
     # use GroupAction to scope the launch files so that their declared arguments don't leak into 
     # the global namespace
     return LaunchDescription(
@@ -161,6 +177,7 @@ def generate_launch_description() -> LaunchDescription:
         + [
             GroupAction([camera_launch], scoped=True),
             GroupAction([laser_cross_launch], scoped=True),
+            GroupAction([gpio_controller_launch], scoped=True),
             GroupAction([movement_controller_launch], scoped=True),
         ]
     )

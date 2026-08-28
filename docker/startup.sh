@@ -32,7 +32,7 @@
 # files, then configures the interactive shell via .bashrc.
 set -e
 
-WORKSPACE=/workspaces/movement_controller
+WORKSPACE=/workspaces/autofactory
 
 echo "==> Initialising rosdep..."
 if [ ! -f /etc/ros/rosdep/sources.list.d/20-default.list ]; then

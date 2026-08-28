@@ -29,7 +29,7 @@ RUN groupadd --gid ${USER_GID} ${USERNAME} 2>/dev/null || true \
     && chmod 0440 /etc/sudoers.d/${USERNAME}
 
 # ── Workspace ──────────────────────────────────────────────────────────────
-WORKDIR /workspaces/movement_controller
+WORKDIR /workspaces/autofactory
 
 # ── Python virtual environment ───────────────────────────────────────────
 # --system-site-packages lets the venv see all ROS 2 apt-installed Python packages

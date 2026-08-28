@@ -17,7 +17,7 @@ ROS2 package to perform robot movements in a simple and extensible way, using Mo
 This project is developed inside a **devcontainer** on Linux. Key facts every agent must know:
 
 - **Container base image:** `ros:jazzy-ros-base` (Ubuntu 24.04 / ROS 2 Jazzy)
-- **Workspace root inside container:** `/workspaces/movement_controller` (or equivalent mount)
+- **Workspace root inside container:** `/workspaces/autofactory` (or equivalent mount)
 - **Always source in this order** before any ROS 2 command:
   ```bash
   source /opt/ros/jazzy/setup.bash          # ROS 2 base

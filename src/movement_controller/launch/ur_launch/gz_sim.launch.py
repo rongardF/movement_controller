@@ -195,7 +195,7 @@ def generate_launch_description():
         DeclareLaunchArgument(
             "gazebo_sim_resource_path",
             description="Path to Gazebo simulation resources.",
-            default_value="/workspaces/movement_controller/model",
+            default_value="/workspaces/autofactory/model",
         )
     )
     # UR specific arguments
@@ -298,7 +298,7 @@ def generate_launch_description():
     declared_arguments.append(
         DeclareLaunchArgument(
             "world_file",
-            default_value="/workspaces/movement_controller/world/default.world",
+            default_value="/workspaces/autofactory/world/default.world",
             description="Gazebo world file (absolute path or filename from the gazebosim worlds collection) containing a custom world.",
         )
     )

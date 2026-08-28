@@ -33,7 +33,7 @@ grep -E '<input .*semantic="(VERTEX|NORMAL)"' path/to/file.dae
 
 To scan the whole workspace for affected files:
 ```bash
-grep -rl 'semantic="NORMAL"' /workspaces/movement_controller/src --include="*.dae" \
+grep -rl 'semantic="NORMAL"' /workspaces/autofactory/src --include="*.dae" \
   | xargs grep -l 'offset="0" semantic="NORMAL"'
 ```
 </diagnosis>
@@ -93,8 +93,8 @@ symlink when the package was built without `--symlink-install` for this asset:
 
 ```bash
 # Find the matching install copy and overwrite it
-SRC=/workspaces/movement_controller/src/ur_gazebo_simulation/model/<model>/meshes/<file>.dae
-DST=/workspaces/movement_controller/install/ur_gazebo_simulation/share/ur_gazebo_simulation/model/<model>/meshes/<file>.dae
+SRC=/workspaces/autofactory/src/ur_gazebo_simulation/model/<model>/meshes/<file>.dae
+DST=/workspaces/autofactory/install/ur_gazebo_simulation/share/ur_gazebo_simulation/model/<model>/meshes/<file>.dae
 cp "$SRC" "$DST"
 ```
 </fix>

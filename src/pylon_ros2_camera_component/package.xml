@@ -1,0 +1,44 @@
+<?xml version="1.0"?>
+<?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
+<package format="3">
+
+  <name>pylon_ros2_camera_component</name>
+  
+  <version>1.1.0</version>
+  
+  <description>
+  	Proprietary ROS2 Package for Basler Cameras using the the Pylon API.
+  	Supports DART, USB3 and GigE cameras.
+  </description>
+    
+  <maintainer email="fpi@teknologisk.dk">Francois Picard</maintainer>
+  
+  <license>BSD</license>
+  
+  <url type="website">https://www.baslerweb.com/en/</url>
+  <url type="repository">https://github.com/basler/pylon-ros-camera</url>
+  <url type="bugtracker">https://github.com/basler/pylon-ros-camera/issues</url>
+
+  <buildtool_depend>ament_cmake</buildtool_depend>
+  
+  <depend>pylon_ros2_camera_interfaces</depend>
+  <depend>rclcpp</depend>
+  <depend>rclcpp_action</depend>
+  <depend>rclcpp_components</depend>
+  <depend>rcutils</depend>
+  <depend>sensor_msgs</depend>
+  <depend>cv_bridge</depend>
+  <depend>pcl_ros</depend>
+  <depend>camera_info_manager</depend>
+  <depend>image_geometry</depend>
+  <depend>image_transport</depend>
+  <depend>diagnostic_updater</depend>
+
+  <test_depend>ament_lint_auto</test_depend>
+  <test_depend>ament_lint_common</test_depend>
+
+  <export>
+    <build_type>ament_cmake</build_type>
+  </export>
+  
+</package>

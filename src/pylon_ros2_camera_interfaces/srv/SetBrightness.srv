@@ -1,0 +1,33 @@
+# The target brightness, which is average intensity values of the images.
+# It depends the exposure time as well as the gain setting.
+int32 target_brightness
+
+# The brightness_continuous flag controls the auto brightness function.
+# Only relevant, if 'brightness' is set. The brightness_continuous 
+# flag controls the auto brightness function. If it is set to false, 
+# the brightness will only be reached once. Hence changing light 
+# conditions lead to changing brightness values. If it is set to true, 
+# the given brightness will be reached continuously, trying to 
+# adapt to changing light conditions. This is only possible for 
+# values in the possible auto range of the pylon API which is generally [50 - 205].
+bool brightness_continuous
+
+# Only relevant, if 'brightness' is set. If the camera should try 
+# to reach and / or keep the brightness, hence adapting to changing 
+# light conditions, at least one of the following flags must be set. 
+# If both are set, the interface will use the profile that tries 
+# to keep the gain at minimum to reduce white noise. The exposure_auto 
+# flag indicates, that the desired brightness will be reached by 
+# adapting the exposure time. The gain_auto flag indicates, that 
+# the desired brightness will be reached by adapting the gain.
+bool exposure_auto
+bool gain_auto
+
+---
+
+# Exact match can not always be reached
+int32 reached_brightness
+float32 reached_exposure_time
+float32 reached_gain_value
+
+bool success

@@ -44,12 +44,9 @@ device:
   # Optional per-entry `default` seeds the initial/simulated value.
   mapping:
     digital_in_states:
-      - { pin: 0, io_name: tool_presence_sensor, default: false }
-      - { pin: 1, io_name: cross_laser_x_triggered, default: false }
-      - { pin: 2, io_name: cross_laser_y_triggered, default: false }
-    digital_out_states:
-      - { pin: 0, io_name: tool_mount_lock }
-      - { pin: 1, io_name: conveyor_run }
+      - { pin: 3, io_name: tool_presence_sensor, default: false }
+      - { pin: 4, io_name: cross_laser_x_triggered, default: false }
+      - { pin: 5, io_name: cross_laser_y_triggered, default: false }
     # UR tool voltage is a single settable output (0/12/24 V) -> AnalogIO/voltage.
     tool_voltage:
       - { io_name: tool_supply_voltage }

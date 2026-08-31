@@ -234,13 +234,9 @@ convenience.
 You can use the repository sandbox scripts from workspace root, for example:
 
 ```bash
-source /opt/venv/bin/activate
-source /opt/ros/jazzy/setup.bash
-source install/setup.bash
-
-python sandbox_lin.py
-python sandbox_ptp.py
-python sandbox_circ.py
+python examples/linear_movement_with_constant_speed_and_blending.py
+python examples/ptp_movement.py
+python examples/circ_movement.py
 ```
 
 These scripts submit `ExecuteTrajectory` goals to

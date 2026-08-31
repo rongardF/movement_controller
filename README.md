@@ -16,6 +16,13 @@ bash
 ros2 launch station station.launch.py simulated:=true gazebo_gui:=false model:=ur10e
 ```
 
+Run following command to launch the station launch system with real hardware (no Gazebo GUI):
+
+bash
+```
+ros2 launch station station.launch.py simulated:=false ip_address:=<robot-ip-address> model:=ur10
+```
+
 # View camera image
 
 To view camera image (real or simulated) run:

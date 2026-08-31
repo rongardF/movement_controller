@@ -1,0 +1,8 @@
+
+---
+string ptp_status           # latched state of the PTP clock, see https://ja.docs.baslerweb.com/pylonapi/net/T_Basler_Pylon_PLCamera_PtpStatusEnum
+string ptp_servo_status     # latched state of the clock servo, see https://docs.baslerweb.com/pylonapi/net/T_Basler_Pylon_PLCamera_PtpServoStatusEnum
+int64 offset_from_master    # ptp offset from master in ticks [ns]
+bool success   # indicate successful run of triggered service
+string message # informational, e.g., for error messages
+

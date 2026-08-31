@@ -46,6 +46,22 @@ echo "==> Installing ROS2 dependencies from package.xml files..."
 source /opt/ros/jazzy/setup.bash
 rosdep install --from-paths "${WORKSPACE}/src" --ignore-src -r -y
 
+echo "==> Installing Pylon SDK"
+apt-get install -y --no-install-recommends libxcb-cursor0 libxcb-xinerama0 libxcb-xinput0 wget
+mkdir -p /opt/pylon_setup
+wget https://downloadbsl.blob.core.windows.net/software/pylon%2025.10.2/pylon-25.10.2_linux-x86_64_debs.tar.gz -P /opt/pylon_setup
+wget https://downloads-ctf.baslerweb.com/dg51pdwahxgw/cmMx43uVISAcg4t7IqrrF/83487e4dcccac2c0644ee5fadc4c323c/pylon-supplementary-package-for-blaze-1.7.3.73dbe706a_x86_64_setup.tar.gz -P /opt/pylon_setup
+cd /opt/pylon_setup
+tar -C /opt/pylon_setup -xzf ./pylon-25.10.2_linux-x86_64_debs.tar.gz
+tar -C /opt/pylon_setup -xf pylon-supplementary-package-for-blaze-1.7.3.73dbe706a_x86_64_setup.tar.gz
+rm pylon-25.10.2_linux-x86_64_debs.tar.gz pylon-supplementary-package-for-blaze-1.7.3.73dbe706a_x86_64_setup.tar.gz
+apt --fix-broken install --assume-yes ./pylon_25.10.2-deb0_amd64.deb
+cd pylon-supplementary-package-for-blaze-1.7.3.73dbe706a_x86_64_setup
+tar -C /opt/pylon -xzf \
+      ./pylon-supplementary-package-for-blaze-1.7.3.73dbe706a_x86_64.tar.gz
+cd ../..
+rm -r ./pylon_setup
+
 echo "==> Configuring interactive shell (.bashrc)..."
 grep -qF '. /opt/venv/bin/activate' ~/.bashrc \
   || echo '. /opt/venv/bin/activate' >> ~/.bashrc

@@ -77,7 +77,7 @@ def main():
     path_home = TrajectoryPath()
     path_home.cartesian_speed = 0.1
     path_home.cartesian_acceleration = 2.2
-    path_home.joint_speed = 1.0
+    path_home.joint_speed = 0.2
     path_home.joint_acceleration = 2.0
     path_home.target_pose = target_home
     path_home.motion_type = "PTP"
@@ -100,7 +100,7 @@ def main():
     path_rotated = TrajectoryPath()
     path_rotated.cartesian_speed = 0.1
     path_rotated.cartesian_acceleration = 2.2
-    path_rotated.joint_speed = 1.57
+    path_rotated.joint_speed = 0.2
     path_rotated.joint_acceleration = 2.0  # high accel values will cause overshoot and start state failure
     path_rotated.target_pose = target_rotated
     path_rotated.motion_type = "PTP"

@@ -82,7 +82,7 @@ def main():
     path_home = TrajectoryPath()
     path_home.cartesian_speed = 0.1
     path_home.cartesian_acceleration = 2.2
-    path_home.joint_speed = 1.0
+    path_home.joint_speed = 0.2
     path_home.joint_acceleration = 2.0
     path_home.target_pose = target_home
     path_home.motion_type = "PTP"
@@ -104,7 +104,7 @@ def main():
     target_circle.pose.orientation.w = 0.49449
     path_circle = TrajectoryPath()
     path_circle.cartesian_speed = 0.2
-    path_circle.cartesian_acceleration = 2.2
+    path_circle.cartesian_acceleration = 0.2
     path_circle.joint_speed = 1.57
     path_circle.joint_acceleration = 2.0  # high accel values will cause overshoot and start state failure
     path_circle.target_pose = target_circle
@@ -132,7 +132,7 @@ def main():
     target_circle.pose.orientation.w = 0.49449
     path_circle = TrajectoryPath()
     path_circle.cartesian_speed = 0.2
-    path_circle.cartesian_acceleration = 2.2
+    path_circle.cartesian_acceleration = 0.2
     path_circle.joint_speed = 1.57
     path_circle.joint_acceleration = 2.0  # high accel values will cause overshoot and start state failure
     path_circle.target_pose = target_circle
@@ -160,7 +160,7 @@ def main():
     target_circle.pose.orientation.w = 0.49449
     path_circle = TrajectoryPath()
     path_circle.cartesian_speed = 0.2
-    path_circle.cartesian_acceleration = 2.2
+    path_circle.cartesian_acceleration = 0.2
     path_circle.joint_speed = 1.57
     path_circle.joint_acceleration = 2.0  # high accel values will cause overshoot and start state failure
     path_circle.target_pose = target_circle

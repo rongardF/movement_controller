@@ -93,10 +93,10 @@ def main():
         paths = []
         for idx, target in enumerate(poses):
             path = TrajectoryPath()
-            path.cartesian_speed = 0.1
-            path.cartesian_acceleration = 2.2
-            path.joint_speed = 1.57
-            path.joint_acceleration = 2.0
+            path.cartesian_speed = 0.2
+            path.cartesian_acceleration = 0.2
+            path.joint_speed = 0.2
+            path.joint_acceleration = 1.0
             path.target_pose = target
             path.path_id = str(uuid.uuid4())
             path.tool_frame = "dispensing_endtool_tip_uncalibrated"

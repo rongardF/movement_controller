@@ -167,10 +167,10 @@ class CaptronORL2(LifecycleNode):
         y_axis_input = self._y_axis_beam_input
 
         x_axis_triggered = any(
-            io.name == x_axis_input and io.state for io in io_states.digital_io
+            io.io_name == x_axis_input and io.state for io in io_states.digital_io
         )
         y_axis_triggered = any(
-            io.name == y_axis_input and io.state for io in io_states.digital_io
+            io.io_name == y_axis_input and io.state for io in io_states.digital_io
         )
 
         self._publish_output(self._output_1_pub, x_axis_triggered)

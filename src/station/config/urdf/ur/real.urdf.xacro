@@ -9,6 +9,7 @@
   <xacro:include filename="$(find ur_description)/urdf/inc/ur_transmissions.xacro" />
 
   <xacro:include filename="$(find cameras)/urdf/basler.urdf.xacro"/>
+  <xacro:include filename="$(find laser_sensors)/urdf/cross_laser.urdf.xacro"/>
   <xacro:include filename="$(find endtools)/urdf/dispensing_tool.urdf.xacro"/>
 
   <!-- possible 'ur_type' values: ur3, ur5, ur10, ur3e, ur5e, ur7e, ur10e, ur12e, ur16e, ur8long, ur15, ur18, ur20, ur30 -->

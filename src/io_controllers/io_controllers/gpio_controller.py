@@ -166,7 +166,7 @@ class GpioController(LifecycleNode):
         # Create the io_state publisher and set_io service (inactive until
         # on_activate starts the timer). QoS: reliable, latest-wins snapshot.
         qos = QoSProfile(depth=1, reliability=ReliabilityPolicy.RELIABLE)
-        self._io_state_pub = self.create_lifecycle_publisher(IOStates, '~/io_state', qos)
+        self._io_state_pub = self.create_lifecycle_publisher(IOStates, '~/io_states', qos)
         self._set_io_srv = self.create_service(SetIO, '~/set_io', self._on_set_io)
 
         # Simulated mode only: advertise input scripting (SPEC 7.6). Real

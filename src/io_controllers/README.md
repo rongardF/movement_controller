@@ -17,7 +17,7 @@ as digital signals and UR tool voltage as an analog (output, voltage) signal.
 
 | Kind | Name | Type | Purpose |
 |------|------|------|---------|
-| Topic (pub) | `io_state` | `io_controllers/IOStates` | Fixed-rate snapshot of every mapped signal. |
+| Topic (pub) | `io_states` | `io_controllers/IOStates` | Fixed-rate snapshot of every mapped signal. |
 | Service | `set_io` | `io_controllers/SetIO` | Best-effort write of one or more outputs. |
 | Action | `monitor_io` | `io_controllers/MonitorIO` | Change-driven feedback stream for one signal. |
 | Service | `set_mock_behavior` | `io_controllers/SetMockBehavior` | Simulated mode only — schedule a future input change. |
@@ -25,7 +25,7 @@ as digital signals and UR tool voltage as an analog (output, voltage) signal.
 Enumerated values are string constants on the messages whose values match the
 internal enums exactly (`in`/`out`, `voltage`/`current`).
 
-### `io_state` (topic)
+### `io_states` (topic)
 
 Publishes a full normalized `IOStates` snapshot at a fixed rate: a
 `std_msgs/Header` plus a `DigitalIO[]` and an `AnalogIO[]`. Each `DigitalIO`
@@ -57,7 +57,7 @@ state change to apply `delay_seconds` from now (0 = immediate). Calls append to
 a per-signal queue. Rejected (with a reason) if the node is not simulated, the
 `io_name` is unknown, the target is an output, or `delay_seconds < 0`. When the
 change fires, the mock updates the cached value and invokes the change callback,
-so `monitor_io` feedback and the next `io_state` snapshot reflect it.
+so `monitor_io` feedback and the next `io_states` snapshot reflect it.
 
 ## Configuration
 

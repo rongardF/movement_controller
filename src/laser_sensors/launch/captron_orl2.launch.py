@@ -50,9 +50,11 @@ def _launch_node(context: LaunchContext):
     respawn = LaunchConfiguration('respawn').perform(context)
     respawn_bool = respawn.lower() == 'true'
 
+    nodes = []
     if simulated_bool:
-        return [
-            # gz -> ROS bridge for the two simulated laser cross beams.
+        LogInfo(msg="Launching Captron ORL2 node in simulated mode.").execute(context)
+        # gz -> ROS bridge for the two simulated laser cross beams.
+        nodes.append(
             Node(
                 package='ros_gz_bridge',
                 namespace=namespace,
@@ -66,34 +68,33 @@ def _launch_node(context: LaunchContext):
                     '/simulated_laser_cross/beam_y_axis'
                     '@sensor_msgs/msg/LaserScan[gz.msgs.LaserScan',
                 ],
-            ),
-            Node(
-                package='laser_sensors',
-                namespace=namespace,
-                executable='captron_orl2',
-                name=node_name,
-                output='screen',
-                respawn=respawn_bool,
-                parameters=[{
-                    'simulated': True,
-                    'detection_distance': float(detection_distance),
-                    "use_sim_time": True
-                }],
-                remappings=[
-                    ('simulated_laser_cross/beam_x_axis', '/simulated_laser_cross/beam_x_axis'),
-                    ('simulated_laser_cross/beam_y_axis', '/simulated_laser_cross/beam_y_axis'),
-                ],
-            ),
-        ]
+            )
+        )
 
-    # Real hardware is not implemented yet: report it and launch nothing.
-    return [
-        LogInfo(
-            msg='Captron ORL2 real-hardware mode is not implemented yet. '
-            'Launch with "simulated:=true" to run the simulated sensor.'
-        ),
-    ]
+    nodes.append(
+        Node(
+            package='laser_sensors',
+            namespace=namespace,
+            executable='captron_orl2',
+            name=node_name,
+            output='screen',
+            respawn=respawn_bool,
+            parameters=[{
+                'simulated': simulated_bool,
+                "use_sim_time": True if simulated_bool else False,
+                'frame_id': 'captron_orl2_intersection',
+                'x_axis_beam_input': 'cross_laser_x_triggered',
+                'y_axis_beam_input': 'cross_laser_y_triggered',
+                "sensor_diameter": float(detection_distance),
+            }],
+            remappings=[
+                ('simulated_laser_cross/beam_x_axis', '/simulated_laser_cross/beam_x_axis'),
+                ('simulated_laser_cross/beam_y_axis', '/simulated_laser_cross/beam_y_axis'),
+            ],
+        )
+    )
 
+    return nodes
 
 def generate_launch_description():
     """Declare launch arguments and wire up the node selection."""

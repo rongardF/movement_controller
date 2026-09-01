@@ -117,6 +117,10 @@
     <child link="station"/>
   </joint>
 
+  <xacro:cross_laser parent="station" name="captron" simulated="true" tf_prefix="$(arg tf_prefix)">
+    <origin xyz="0.35 0.45 0.95" rpy="0 0 3.14"/>
+  </xacro:cross_laser>
+
   <!-- arm -->
   <xacro:ur_robot
     name="$(arg name)"

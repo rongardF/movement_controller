@@ -1,0 +1,17 @@
+# Goal: which I/O signal to watch.
+string io_name                 # unique logical name from config
+bool   emit_initial true       # field default (no `=`): if true, send one
+                               # feedback with the current value immediately on
+                               # acceptance (edge baseline).
+---
+# Result: returned only when the goal ends (cancel / node deactivate / error).
+bool   success                 # true if watched cleanly until it ended
+string message                 # reason for termination (e.g. "cancelled",
+                               # "deactivated", or an error description)
+uint64 change_count            # number of change feedbacks emitted
+---
+# Feedback: one message per detected value change.
+DigitalIO digital_io           # populated iff the watched signal is digital
+AnalogIO  analog_io            # populated iff the watched signal is analog
+bool      is_digital           # selects which of the two fields is valid
+builtin_interfaces/Time stamp  # time the change was observed by the driver

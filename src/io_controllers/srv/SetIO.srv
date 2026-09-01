@@ -1,0 +1,9 @@
+# Request: set one or more outputs. Direction/domain fields in the request
+# entries are advisory only — targets are resolved by io_name. Inputs are
+# never writable and are reported as failures.
+IOStates command
+---
+# Response: best-effort result.
+bool     success            # true only if every requested entry succeeded
+string   message            # human-readable summary (empty on full success)
+string[] failed_io_names    # io_names that could not be set

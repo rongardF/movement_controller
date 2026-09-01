@@ -1,0 +1,9 @@
+# Request: schedule one future state change for a simulated INPUT signal.
+string  io_name         # must resolve to an INPUT signal in the mapping
+bool    digital_state   # used when the signal is digital
+float32 analog_state    # used when the signal is analog
+float64 delay_seconds   # time-from-now to apply the change; 0 = immediate
+---
+# Response.
+bool    success         # false on any rejection (see below)
+string  message         # reason on rejection; empty on success

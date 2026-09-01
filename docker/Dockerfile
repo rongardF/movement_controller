@@ -10,13 +10,33 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     python3-rosdep \
     ros-jazzy-nav2-lifecycle-manager \
     sudo \
-    # Mesa OpenGL/DRI libraries required by RViz2 and Qt-based GUI tools.
-    # libgl1-mesa-dri provides both the hardware DRI drivers and the llvmpipe
-    # software renderer (used when LIBGL_ALWAYS_SOFTWARE=1 is set).
+    # Mesa OpenGL/DRI libraries required by RViz2 and Qt-based GUI tools when
+    # falling back to software rendering (LIBGL_ALWAYS_SOFTWARE=1).
     libgl1-mesa-dri \
     libglx-mesa0 \
     libegl-mesa0 \
+    # GLVND dispatch libraries: let the NVIDIA Container Toolkit inject the
+    # host's proprietary driver libs at runtime for hardware-accelerated GL/EGL.
+    libglvnd0 \
+    libgl1 \
+    libglx0 \
+    libegl1 \
+    libgles2 \
     && rm -rf /var/lib/apt/lists/*
+
+# Advertise GPU/graphics capabilities to the NVIDIA Container Toolkit so it
+# mounts the driver libraries and /dev/nvidia* devices at container start.
+ENV NVIDIA_VISIBLE_DEVICES=all
+ENV NVIDIA_DRIVER_CAPABILITIES=graphics,utility,compute
+
+# The toolkit only mounts the driver's versioned .so libraries at runtime; the
+# glvnd ICD json (version-independent) is not injected and must ship in the
+# image itself, or glvnd silently falls back to the Mesa ICD (software render).
+RUN mkdir -p /usr/share/glvnd/egl_vendor.d /usr/share/glvnd/glx_vendor.d \
+    && echo '{"file_format_version":"1.0.0","ICD":{"library_path":"libEGL_nvidia.so.0"}}' \
+    > /usr/share/glvnd/egl_vendor.d/10_nvidia.json \
+    && echo '{"file_format_version":"1.0.0","library_path":"libGLX_nvidia.so.0"}' \
+    > /usr/share/glvnd/glx_vendor.d/10_nvidia.json
 
 # ── Non-root user (used by production profile) ─────────────────────────────
 ARG USERNAME=user

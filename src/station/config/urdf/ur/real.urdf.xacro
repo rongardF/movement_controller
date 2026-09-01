@@ -9,6 +9,7 @@
   <xacro:include filename="$(find ur_description)/urdf/inc/ur_transmissions.xacro" />
 
   <xacro:include filename="$(find cameras)/urdf/basler.urdf.xacro"/>
+  <xacro:include filename="$(find endtools)/urdf/dispensing_tool.urdf.xacro"/>
 
   <!-- possible 'ur_type' values: ur3, ur5, ur10, ur3e, ur5e, ur7e, ur10e, ur12e, ur16e, ur8long, ur15, ur18, ur20, ur30 -->
   <!-- the default value should raise an error in case this was called without defining the type -->
@@ -167,6 +168,10 @@
   <xacro:basler_camera parent="tool_mount_link" name="basler" simulated="false" tf_prefix="$(arg tf_prefix)">
     <origin xyz="-0.03 0.025 -0.057" rpy="1.57 0 1.57"/>
   </xacro:basler_camera>
+
+  <xacro:dispensing parent="tool_mount_link" name="dispensing" simulated="false" tf_prefix="$(arg tf_prefix)">
+    <origin xyz="0.0475 0 0" rpy="0 0 0"/>
+  </xacro:dispensing>
 
   <link name="conveyor">
     <visual>

@@ -1,0 +1,7 @@
+# DispenseStop.srv — stop the (mock) dispenser valve and report the dispensed amount.
+# Request has no fields; the dispenser state is held by the node.
+---
+bool     success            # True if the stop succeeded (was dispensing)
+float64  dispensed_volume 0.0   # Millilitres dispensed = flow_rate * duration_seconds
+float64  duration_seconds 0.0   # Elapsed dispensing time in seconds
+string   error_message      # Populated when success is False

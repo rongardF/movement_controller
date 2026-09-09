@@ -1,0 +1,40 @@
+<?xml version="1.0"?>
+<tool_mount xmlns:xacro="http://wiki.ros.org/xacro">
+
+  <xacro:macro name="tool_rack" params="
+    parent:=station
+    *origin
+    ">
+
+    <link name="tool_rack_link">
+        <visual>
+            <origin xyz="0 0 0" rpy="0 0 0"/>
+            <geometry>
+                <mesh>
+                <uri>model://tool_rack/meshes/visual.dae</uri>
+                </mesh>
+            </geometry>
+        </visual>
+        <collision>
+            <origin xyz="0 0 0" rpy="0 0 0"/>
+            <geometry>
+                <mesh>
+                <uri>model://tool_rack/meshes/collision.stl</uri>
+                </mesh>
+            </geometry>
+        </collision>
+        <inertial>
+            <mass value="0.5"/>
+            <inertia ixx="0.001" ixy="0" ixz="0" iyy="0.001" iyz="0" izz="0.001"/>
+        </inertial>
+    </link>
+
+    <!-- TODO: define a link for each slot 'slide_in', 'tool_attached' and 'tool_lifted' -->
+
+    <joint name="tool_rack_joint" type="fixed">
+        <parent link="$(arg parent)"/>
+        <child link="tool_rack_link"/>
+        <xacro:insert_block name="origin"/>
+    </joint>
+  </xacro:macro>
+</tool_mount>

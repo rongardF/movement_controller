@@ -1,0 +1,20 @@
+slots:
+  - name: slot1
+    tool_sn: "dispensing_ABC123"
+    tool_lifted_pose: [0.0, -0.164, 0.285, 0.0, 0.0, 0.0]
+    tool_attached_pose: [0.0, -0.164, 0.285, 0.0, 0.0, 0.0]
+    tool_slide_in_pose: [0.0, -0.164, 0.285, 0.0, 0.0, 0.0]
+    launch_file: "dispensing_tool_launch.py"
+  - name: slot2
+    tool_sn: "dispensing_DEF123"
+    tool_lifted_pose: [-0.249, -0.164, 0.285, 0.0, 0.0, 0.0]
+    tool_attached_pose: [0.0, -0.164, 0.285, 0.0, 0.0, 0.0]
+    tool_slide_in_pose: [0.0, -0.164, 0.285, 0.0, 0.0, 0.0]
+    launch_file: "dispensing_tool_launch.py"
+sim_bootup:
+  - name: slot1
+    tool_sn: "dispensing_ABC123"
+    xacro_file: "dispensing_tool.srdf.xacro"
+  - name: slot2
+    tool_sn: "dispensing_DEF123"
+    xacro_file: "dispensing_tool.srdf.xacro"
